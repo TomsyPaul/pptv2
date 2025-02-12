@@ -24,9 +24,9 @@ python3 treegen.py --n=$worldsize
 
 #generate partition_sizes
 >partition_sizes
-for((i=0;i<$world_size;i++))
+for((i=0;i<$worldsize;i++))
 do
-common=`echo 1.0/$world_size | bc -l`
+common=`echo 1.0/$worldsize | bc -l`
 echo -n "$common, ">>partition_sizes 
 done
 

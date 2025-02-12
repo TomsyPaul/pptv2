@@ -19,6 +19,15 @@ do
       ssh -n tomsy@$ip docker cp /home/tomsy/mydfl/$filename c$i:/workspace/$filename
    done < files-to-upload      
    fi   
+ ((i++))     	  
+ fi
+done < hostips
+
+i=0
+while  read ip
+do
+ if [ ! -z $ip ]
+ then
    gnome-terminal --window -- bash -c "ssh -n tomsy@$ip docker exec c$i python run.py --rank=$i --size=$size --epochs=$epochs --averager=$averager --K=$K --runid=$runid; echo Output of $i; exec bash"   
  ((i++))     	
  fi
