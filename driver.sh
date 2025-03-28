@@ -1,8 +1,8 @@
 #! /bin/bash
 #cd ~/mydfl
 #git pull https://tomsypaul@github.com/TomsyPaul/mydfl.git 
-read -p "Enter Worldsize " worldsize
-
+#read -p "Enter Worldsize " worldsize
+worldsize=$5
 #set hostips
 head -n $worldsize hostipsall > hostips
 
@@ -26,7 +26,8 @@ python3 treegen.py --n=$worldsize
 >partition_sizes
 for((i=0;i<$worldsize;i++))
 do
-common=`echo 1.0/$worldsize | bc -l`
+#common=`echo 1.0/$worldsize | bc -l`
+common=`echo 1.0/16 | bc -l`
 echo -n "$common, ">>partition_sizes 
 done
 
