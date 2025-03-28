@@ -10,7 +10,7 @@ do
    else 
       container=""
    fi      
-   ssh tomsy@$ip $1 $container </dev/null
+   ssh tomsy@$ip $1 $container </dev/null&
    ((i++))     	
 #   echo "id=$i, ip=$ip"
  fi
