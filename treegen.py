@@ -66,17 +66,25 @@ if __name__ == "__main__":
      r,t=generate_tree(int(n),0)
 #     print(r,t)
      l=[]
+     t1=[]
      f1 = open("layout-up", "w")
      f2 = open("layout-down", "w")
+     f3 = open("layout", "w")
 #     print("n=",n)
      for edge in t:
 #        print(edge[0],",",edge[1],sep="",end=" ")
         f1.write(str(edge[0])+","+str(edge[1])+"\n")
         l=[edge]+l
+        t1=t1+[edge]+[(edge[1],edge[0])]
      for edge in l:
 #        print(edge[1],",",edge[0])
         f2.write(str(edge[1])+","+str(edge[0])+"\n")
+     for edge in sorted(t1):
+#        print(edge[1],",",edge[0])
+        f3.write(str(edge[0])+","+str(edge[1])+"\n")
+
      f1.close()
      f2.close()
+     f3.close()
 #     print("")
 

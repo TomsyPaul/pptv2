@@ -41,6 +41,7 @@ done
 
 #set files to upload
 >files-to-upload
+echo layout >> files-to-upload
 echo layout-up >> files-to-upload
 echo layout-down >> files-to-upload
 #echo secrets >> files-to-upload
