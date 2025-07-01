@@ -111,7 +111,8 @@ def basic_average_gradients(model):
         btreedata1 = list(csv.reader(csvfile1))
     with open('layout-down', newline='') as csvfile2:
         btreedata2 = list(csv.reader(csvfile2))
-
+    bytes_sent=0
+    messages_sent=0
     for param in model.parameters():
 #        if type(param) is torch.Tensor:
             model.mybuf=copy.deepcopy(param.grad.data)
@@ -122,7 +123,8 @@ def basic_average_gradients(model):
             for currentrow in btreedata1:
                          if int(currentrow[0]) == rank:
                            dist.send(tensor=param.grad.data,dst=int(currentrow[1]))
-                           
+                           bytes_sent += param.grad.data.nelement() * param.grad.data.element_size()
+                           messages_sent += 1
                          elif int(currentrow[1]) == rank:
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
                            param.grad.data+=model.mybuf
@@ -132,11 +134,15 @@ def basic_average_gradients(model):
             for currentrow in btreedata2:
                         if int(currentrow[0]) == rank:
                            dist.send(tensor=param.grad.data,dst=int(currentrow[1]))
+                           bytes_sent += param.grad.data.nelement() * param.grad.data.element_size()
+                           messages_sent += 1
+
                         elif int(currentrow[1]) == rank:
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
                            param.grad.data=model.mybuf
 #           dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM, group=0)
             param.grad.data /= size
+    return bytes_sent,messages_sent        
 
 nextadjustment=None
 
@@ -303,7 +309,8 @@ def run(rank, size, epochs, K, averager, runid):
                 model.aux["key"]=allkeys[rank//4][0]
             nextadjustment = getnextadjustment(model.aux["key"])
             
-
+    total_bytes=0
+    total_messgaes=0
     
     for epoch in range(epochs):
         epoch_loss = 0.0
@@ -319,7 +326,9 @@ def run(rank, size, epochs, K, averager, runid):
             skip += 1
             if (skip % K) == 0:
                if averager == "DFLBASIC":
-                  basic_average_gradients(model)
+                  bytes_sent,messages_sent=basic_average_gradients(model)
+                  total_bytes += bytes_sent
+                  total_messgaes += messages_sent
                elif averager == "DFLMSS":
                   my_average_gradients(model)                  
                elif averager == "DFLTSS":
@@ -331,7 +340,7 @@ def run(rank, size, epochs, K, averager, runid):
         logging.info(f"Rank,{rank},epoch,{epoch},{epoch_loss/num_batches:.4f}")
     endtime = time.time()
     print(endtime - starttime)
-    logging.info(f"Rank,{rank},TIME,{endtime-starttime:.4f}")    
+    logging.info(f"Rank,{rank},TIME,{endtime-starttime:.4f},BYTES,{total_bytes},MESSAGES,{total_messgaes}")    
 
 
 
