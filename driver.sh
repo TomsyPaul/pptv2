@@ -26,8 +26,8 @@ python3 treegen.py --n=$worldsize
 >partition_sizes
 for((i=0;i<$worldsize;i++))
 do
-#common=`echo 1.0/$worldsize | bc -l`
-common=`echo 1.0/16 | bc -l`
+common=`echo 1.0/$worldsize | bc -l`
+#common=`echo 1.0/16 | bc -l`
 echo -n "$common, ">>partition_sizes 
 done
 
@@ -46,7 +46,7 @@ echo layout-up >> files-to-upload
 echo layout-down >> files-to-upload
 #echo secrets >> files-to-upload
 echo keys >> files-to-upload
-echo run.py >> files-to-upload
+echo run-cifar.py >> files-to-upload
 echo partition_sizes >> files-to-upload
 
 #rest of the process
@@ -97,5 +97,7 @@ do
 grep "epoch,$i" results/$worldsize-$averager-$epochs-$runid | cut -d"," -f5 | awk '{ sum += $1; n++ } END { if (n > 0) print "'$i' = " sum / n ; }' >> results/summary
 done
 echo "" >> "results/summary"
+bash close-all-terminals.sh
+sleep 1
 bash close-all-terminals.sh
 fi
