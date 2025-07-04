@@ -98,6 +98,4 @@ grep "epoch,$i" results/$worldsize-$averager-$epochs-$runid | cut -d"," -f5 | aw
 done
 echo "" >> "results/summary"
 bash close-all-terminals.sh
-sleep 1
-bash close-all-terminals.sh
 fi
