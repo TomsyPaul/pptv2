@@ -58,40 +58,44 @@ class DataPartitioner(object):
 
 
 class Net(nn.Module):
-    """ Network architecture. """
     def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
-        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
-        self.conv2_drop = nn.Dropout2d()
-        self.fc1 = nn.Linear(320, 50)
-        self.fc2 = nn.Linear(50, 10)
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 6, 5)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(6, 16, 5)
+        self.fc1 = nn.Linear(16 * 5 * 5, 120)
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3 = nn.Linear(84, 10)
+
+
         self.mybuf=[]
         self.splitbuf=[]
 #        self.secret=float(0)
         self.aux=dict(isleaf=False,partner=0,adder=False,key="1234567890")
+
     def forward(self, x):
-        x = F.relu(F.max_pool2d(self.conv1(x), 2))
-        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
-        x = x.view(-1, 320)
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = torch.flatten(x, 1) # flatten all dimensions except batch
         x = F.relu(self.fc1(x))
-        x = F.dropout(x, training=self.training)
-        x = self.fc2(x)
-        return F.log_softmax(x, dim=1)
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+#        return F.log_softmax(x, dim=1)
+        return x
 
 
 def partition_dataset():
-    """ Partitioning MNIST """
-    dataset = datasets.MNIST(
+    """ Partitioning CIFAR10 """
+    dataset = datasets.CIFAR10(
         './data',
         train=True,
         download=True,
-        transform=transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307, ), (0.3081, ))
-        ]))
+        transform=transforms.Compose(
+    [transforms.ToTensor(),
+     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]))
     size = dist.get_world_size()
     bsz = 128 // size
+#    bsz=4
 #    partition_sizes = [1.0 / size for _ in range(size)]
     with open('partition_sizes', newline='') as csvfile1:
         partition_sizes = list(csv.reader(csvfile1))
@@ -286,9 +290,9 @@ def run(rank, size, epochs, K, averager, runid):
     torch.manual_seed(1234)
     train_set, bsz = partition_dataset()
     model = Net()
-    model = model
 #    model = model.cuda(rank)
-    optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.5)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.5)
 
     num_batches = ceil(len(train_set.dataset) / float(bsz))
 
@@ -320,7 +324,8 @@ def run(rank, size, epochs, K, averager, runid):
 #            data, target = Variable(data.cuda(rank)), Variable(target.cuda(rank))
             optimizer.zero_grad()
             output = model(data)
-            loss = F.nll_loss(output, target)
+#            loss = F.nll_loss(output, target)
+            loss = criterion(output, target)
             epoch_loss += loss
             loss.backward()
             skip += 1
