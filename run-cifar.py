@@ -290,8 +290,10 @@ def their_average_gradients(model):
 #            dist.barrier()
             dist.all_reduce(model.mybuf, op=dist.reduce_op.SUM)
 #           all reduce makes each node send model parameters at least log2(n) times
-            bytes_sent += math.log2(size) * model.mybuf.nelement() * splitparam[j].element_size()
-            messages_sent += math.log2(size)
+#            bytes_sent += math.log2(size) * model.mybuf.nelement() * splitparam[j].element_size()
+#            messages_sent += math.log2(size)
+            bytes_sent += size * model.mybuf.nelement() * splitparam[j].element_size()
+            messages_sent += size
 
             param.grad.data = model.mybuf
             param.grad.data /= size
