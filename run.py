@@ -188,6 +188,8 @@ def my_average_gradients(model):
         btreedata1 = list(csv.reader(csvfile1))
     with open('layout-down', newline='') as csvfile2:
         btreedata2 = list(csv.reader(csvfile2))
+    bytes_sent=0
+    messages_sent=0
     
     global nextadjustment
         
@@ -209,6 +211,8 @@ def my_average_gradients(model):
             for currentrow in btreedata1:
                          if int(currentrow[0]) == rank:
                            dist.send(tensor=param.grad.data,dst=int(currentrow[1]))
+                           bytes_sent += param.grad.data.nelement() * param.grad.data.element_size()
+                           messages_sent += 1
                            
                          elif int(currentrow[1]) == rank:
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
@@ -219,12 +223,14 @@ def my_average_gradients(model):
             for currentrow in btreedata2:
                         if int(currentrow[0]) == rank:
                            dist.send(tensor=param.grad.data,dst=int(currentrow[1]))
+                           bytes_sent += param.grad.data.nelement() * param.grad.data.element_size()
+                           messages_sent += 1
                         elif int(currentrow[1]) == rank:
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
                            param.grad.data=model.mybuf
 #           dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM, group=0)
             param.grad.data /= size
-
+    return bytes_sent,messages_sent
 def Add_SS(v, n, seed):
     vlist = []
     rnd=Random()
@@ -239,12 +245,14 @@ def Add_SS(v, n, seed):
     return vlist    
 
 def their_average_gradients(model):
-    """ Gradient averaging using LiPFed """
+    """ Gradient averaging using modified LiPFed """
     size = dist.get_world_size()
     rank = dist.get_rank()
     with open('layout', newline='') as csvfile1:
         btreedata1 = list(csv.reader(csvfile1))
     seedvalue=100
+    bytes_sent=0
+    messages_sent=0
     for param in model.parameters():
             first_receiving = True
             model.mybuf=copy.deepcopy(param.grad.data)
@@ -266,6 +274,8 @@ def their_average_gradients(model):
                            for j in range(number_of_splits):
                                targetnode=int(btreedata1[rowindex][1])
                                dist.send(tensor=splitparam[j],dst=targetnode)
+                               bytes_sent += splitparam[j].nelement() * splitparam[j].element_size()
+                               messages_sent += 1
                                rowindex += 1
                          elif int(btreedata1[rowindex][1]) == rank:
                            dist.recv(tensor=model.splitbuf,src=int(btreedata1[rowindex][0]))
@@ -279,9 +289,13 @@ def their_average_gradients(model):
                            rowindex += 1       
 #            dist.barrier()
             dist.all_reduce(model.mybuf, op=dist.reduce_op.SUM)
+#           all reduce makes each node send model parameters at least log2(n) times
+            bytes_sent += math.log2(size) * model.mybuf.nelement() * splitparam[j].element_size()
+            messages_sent += math.log2(size)
+
             param.grad.data = model.mybuf
             param.grad.data /= size
-
+    return bytes_sent,messages_sent
 #def run(rank, size):
 #   """ Distributed function to be implemented later. """
 #   print("Rank = ", rank)
@@ -332,12 +346,12 @@ def run(rank, size, epochs, K, averager, runid):
             if (skip % K) == 0:
                if averager == "DFLBASIC":
                   bytes_sent,messages_sent=basic_average_gradients(model)
-                  total_bytes += bytes_sent
-                  total_messgaes += messages_sent
                elif averager == "DFLMSS":
-                  my_average_gradients(model)                  
+                  bytes_sent,messages_sent=my_average_gradients(model)                  
                elif averager == "DFLTSS":
-                  their_average_gradients(model)
+                  bytes_sent,messages_sent=their_average_gradients(model)
+            total_bytes += bytes_sent
+            total_messgaes += messages_sent
             optimizer.step()
         print('Rank ',
             dist.get_rank(), ', epoch ', epoch, ': ',
