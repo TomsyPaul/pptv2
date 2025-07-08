@@ -346,12 +346,17 @@ def run(rank, size, epochs, K, averager, runid):
             if (skip % K) == 0:
                if averager == "DFLBASIC":
                   bytes_sent,messages_sent=basic_average_gradients(model)
+                  total_bytes += bytes_sent
+                  total_messgaes += messages_sent
                elif averager == "DFLMSS":
                   bytes_sent,messages_sent=my_average_gradients(model)                  
+                  total_bytes += bytes_sent
+                  total_messgaes += messages_sent
                elif averager == "DFLTSS":
                   bytes_sent,messages_sent=their_average_gradients(model)
-            total_bytes += bytes_sent
-            total_messgaes += messages_sent
+                  total_bytes += bytes_sent
+                  total_messgaes += messages_sent
+
             optimizer.step()
         print('Rank ',
             dist.get_rank(), ', epoch ', epoch, ': ',
