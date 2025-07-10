@@ -21,6 +21,18 @@ from random import Random
 from torch.autograd import Variable
 from torchvision import datasets, transforms
 
+from functools import reduce
+
+from ftl import augmentation
+from ftl.encryption import paillier, encryption
+
+
+publickey=paillier.PaillierPublicKey(27236700922646976555595848507913589494886491119135730116014077185311243444450372255376489388880173022641848729747213088746475118480344996406749938547224285029951417411158327330610634671230458266993515963753271442282969744291116368707834837036890519842176076657317424175485854349519237230877898852294685281803161775833139254050216610420167131637216465657783550454961204111753470621658424459969937833601118914414496472033175054121693273513687334787107976849759736841476647931918984474457173711208172669939800415050356154977238127550304510079658979903408556459392897794799075517038480041829170731623511642064703877042081)
+
+
+privatekey=paillier.PaillierPrivateKey(publickey,151731466574845229173039099025495922095008727037737139342593172671294559941585338353476978224816381692776568780654141379462769869960946855764863957672293447968060874024631012137102252157537274255768018381630660935684213060267736952413889789815316743297286676968944107787802792481731771876027538148701189447527,
+179505949144779488794639217468096838709557457111534772428337237788171867936597162601187903575540819127792895820899862337184627927909110508331699702369829930039159510893967892328575714125966954175352601542034250713387089395862180071677366675266103958356045025432474981187150877764707656153946356889833385368503)
+
 class Partition(object):
     """ Dataset-like object, but only access a subset of it. """
 
@@ -102,6 +114,30 @@ def partition_dataset():
         partition, batch_size=bsz, shuffle=True)
     return train_set, bsz
 
+def do_sum(x1, x2):
+    results = []
+    for i in range(len(x1)):
+        results.append(x1[i] + x2[i])
+    return results
+
+
+def aggregate_gradients(gradient_list, weight=0.5):
+    # def multiply_by_weight(party, w):
+    #     for i in range(len(party)):
+    #         party[i] = w * party[i]
+    #     return party
+
+    # gradient_list = Parallel(n_jobs=2)(delayed(multiply_by_weight)(party, weight) for party in gradient_list)
+    results = reduce(do_sum, gradient_list)
+    return results
+
+
+def aggregate_losses(loss_list):
+    return np.sum(loss_list)
+
+
+
+
 def basic_average_gradients(model):
     """ Gradient averaging using Binomial Tree. """
 #    print("Using DFL")
@@ -115,19 +151,23 @@ def basic_average_gradients(model):
     messages_sent=0
     for param in model.parameters():
 #        if type(param) is torch.Tensor:
-            model.mybuf=copy.deepcopy(param.grad.data)
+            enc_grads_batch = [encryption.encrypt_matrix(publickey, x) for x in param.grad.data]
+            model.mybuf=copy.deepcopy(enc_grads_batch)
 #            model.testbuf=torch.tensor(np.zeros(1))
             #Tree Upward
 #           for i in range(int(math.log2(size))):
 #           for i in range(len(btreedata)):
             for currentrow in btreedata1:
                          if int(currentrow[0]) == rank:
-                           dist.send(tensor=param.grad.data,dst=int(currentrow[1]))
-                           bytes_sent += param.grad.data.nelement() * param.grad.data.element_size()
+                           dist.send(tensor=enc_grads_batch,dst=int(currentrow[1]))
+                           bytes_sent += enc_grads_batch.nelement() * enc_grads_batch.element_size()
                            messages_sent += 1
                          elif int(currentrow[1]) == rank:
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
-                           param.grad.data+=model.mybuf
+#                           param.grad.data+=model.mybuf
+                           enc_grads_batch = aggregate_gradients(enc_grads_batch,model.mybuf)
+
+            param.grad.data = [encryption.decrypt_matrix(privatekey, x).astype(np.float32) for x in enc_grads_batch]    
 
 #Tree Downward
 
