@@ -15,7 +15,7 @@ do
    then
    while read filename
    do
-      scp $filename tomsy@$ip:mydfl
+      scp -r $filename tomsy@$ip:mydfl
       ssh -n tomsy@$ip docker cp /home/tomsy/mydfl/$filename c$i:/workspace/$filename
    done < files-to-upload      
    fi   
