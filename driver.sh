@@ -49,8 +49,6 @@ echo keys >> files-to-upload
 echo run.py >> files-to-upload
 echo partition_sizes >> files-to-upload
 echo ftl >> files-to-upload
-echo paillier.py >> files-to-upload
-echo encryption.py >> files-to-upload
 #rest of the process
 mkdir -p results
 coding=$1
