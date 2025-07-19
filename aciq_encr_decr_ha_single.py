@@ -125,7 +125,7 @@ if  __name__ == "__main__":
     # resulttensor=torch.from_numpy(result)
     #print("\nSum tensor = ",resulttensor)
     num_clients=2
-    grads_batch_clients=[x,y]
+    grads_batch_clients=[x.numpy(),y.numpy()]
     q_width=16
     sizes = [item.size * num_clients for item in grads_batch_clients[0]]
     max_values = []
@@ -148,7 +148,7 @@ if  __name__ == "__main__":
     # grads_1 = quantize_per_layer(grads_1, r_maxs, bit_width=q_width)
     grads_batch_clients = [quantize_per_layer(item, r_maxs, bit_width=q_width)
                             for item in grads_batch_clients]
-
+    #breakpoint()
     # grads = aggregate_gradients([grads_0, grads_1])
     # loss_value = aggregate_losses([0.5 * loss_value_0, 0.5 * loss_value_1])
     grads = aggregate_gradients(grads_batch_clients)
@@ -157,7 +157,7 @@ if  __name__ == "__main__":
 
     # grads = unquantize_per_layer(grads, r_maxs, bit_width=q_width)
     grads = unquantize_per_layer(grads, r_maxs, bit_width=q_width)
-    result=np.array([encryption.decrypt_matrix(privatekey, item).astype(np.float32) for item in grads])
+    #result=np.array([encryption.decrypt_matrix(privatekey, item).astype(np.float32) for item in grads])
     print("\nx array = ",x)
     print("\ny array = ",y)
-    print("\nSum array = ",result)
+    print("\nSum array = ",grads)
