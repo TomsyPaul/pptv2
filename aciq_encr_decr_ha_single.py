@@ -161,3 +161,76 @@ if  __name__ == "__main__":
     print("\nx array = ",x)
     print("\ny array = ",y)
     print("\nSum array = ",grads)
+
+
+
+    print("\n\n\nStarting en_batch ") 
+    theta = 2.5
+    # clipping_thresholds = encryption.calculate_clip_threshold(grads_0) return [theta * np.std(x) for x in grads]
+    # theta = 2.5
+    # calculate global std by combination, clients send E(X^2), E(X), and layerwise sizes to the server
+    # std = E(X^2) - (E(X))^2
+    num_clients=2
+    grads_batch_clients=[x.numpy(),y.numpy()]
+    q_width=16
+    sizes = [item.size * num_clients for item in grads_batch_clients[0]]
+
+    grads_batch_clients_mean = []
+    grads_batch_clients_mean_square = []
+    for client_idx in range(len(grads_batch_clients)):
+        temp_mean = [np.mean(grads_batch_clients[client_idx][layer_idx])
+                        for layer_idx in range(len(grads_batch_clients[client_idx]))]
+        temp_mean_square = [np.mean(grads_batch_clients[client_idx][layer_idx] ** 2)
+                            for layer_idx in range(len(grads_batch_clients[client_idx]))]
+        grads_batch_clients_mean.append(temp_mean)
+        grads_batch_clients_mean_square.append(temp_mean_square)
+    grads_batch_clients_mean = np.array(grads_batch_clients_mean)
+    grads_batch_clients_mean_square = np.array(grads_batch_clients_mean_square)
+
+    layers_size = np.array([_.size for _ in grads_batch_clients[0]])
+    clipping_thresholds = theta * (
+                np.sum(grads_batch_clients_mean_square * layers_size, 0) / (layers_size * num_clients)
+                - (np.sum(grads_batch_clients_mean * layers_size, 0) / (layers_size * num_clients)) ** 2) ** 0.5
+
+    print("clipping_thresholds", clipping_thresholds)
+
+    r_maxs = [x * num_clients for x in clipping_thresholds]
+
+    # grads_0 = encryption.clip_with_threshold(grads_0, clipping_thresholds)
+    # grads_1 = encryption.clip_with_threshold(grads_1, clipping_thresholds)
+    grads_batch_clients = [encryption.clip_with_threshold(item, clipping_thresholds)
+                            for item in grads_batch_clients]
+
+    # enc_grads_0, og_shape_0 = batch_enc_per_layer(publickey=publickey, party=grads_0, r_maxs=r_maxs, bit_width=q_width,
+    #                                               batch_size=batch_size)
+    # enc_grads_1, og_shape_1 = batch_enc_per_layer(publickey=publickey, party=grads_1, r_maxs=r_maxs, bit_width=q_width,
+    #                                               batch_size=batch_size)
+    enc_grads_batch_clients = []
+    og_shape_batch_clients = []
+    batchsize=16
+    for item in grads_batch_clients:
+        enc_grads_temp, og_shape_temp = batch_enc_per_layer(publickey=publickey, party=item,
+                                                            r_maxs=r_maxs,
+                                                            bit_width=q_width,
+                                                            batch_size=batchsize)
+        enc_grads_batch_clients.append(enc_grads_temp)
+        og_shape_batch_clients.append(og_shape_temp)
+
+    # loss_value_0 = publickey.encrypt(loss_value_0)
+    # loss_value_1 = publickey.encrypt(loss_value_1)
+    #loss_batch_clients = [publickey.encrypt(item) for item in loss_batch_clients]
+
+    # grads = aggregate_gradients([enc_grads_0, enc_grads_1])
+    # loss_value = aggregate_losses([0.5 * loss_value_0, 0.5 * loss_value_1])
+    grads = aggregate_gradients(enc_grads_batch_clients)
+    serialized_grads = pickle.dumps(grads)
+    #client_weight = 1.0 / num_clients
+    #loss_value = aggregate_losses([item * client_weight for item in loss_batch_clients])
+
+    # loss_value = encryption.decrypt(privatekey, loss_value)
+    # grads = batch_dec_per_layer(privatekey=privatekey, party=grads, og_shapes=og_shape_0, r_maxs=r_maxs, bit_width=q_width, batch_size=batch_size)
+    #loss_value = encryption.decrypt(privatekey, loss_value)
+    grads = batch_dec_per_layer(privatekey=privatekey, party=grads, og_shapes=og_shape_batch_clients[0],
+                                r_maxs=r_maxs, bit_width=q_width, batch_size=batchsize)
+    print("\n\nResult= ", grads)
+    print("\n\nSize= ", len(serialized_grads))
