@@ -114,15 +114,15 @@ if  __name__ == "__main__":
     y = torch.tensor([[17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32], [25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40]], dtype=torch.float32)
     npy=y.numpy()
     ciphery=encryption.encrypt_matrix(publickey, npy)
-    test_list=[]
-    test_list.append(cipherx)
-    test_list.append(ciphery)
-    cipherresult=aggregate_gradients(test_list)
-    result=np.array([encryption.decrypt_matrix(privatekey, item).astype(np.float32) for item in cipherresult])
-    print("\nx array = ",x)
-    print("\ny array = ",y)
-    print("\nSum array = ",result)
-    resulttensor=torch.from_numpy(result)
+    # test_list=[]
+    # test_list.append(cipherx)
+    # test_list.append(ciphery)
+    # cipherresult=aggregate_gradients(test_list)
+    # result=np.array([encryption.decrypt_matrix(privatekey, item).astype(np.float32) for item in cipherresult])
+    # print("\nx array = ",x)
+    # print("\ny array = ",y)
+    # print("\nSum array = ",result)
+    # resulttensor=torch.from_numpy(result)
     #print("\nSum tensor = ",resulttensor)
     num_clients=2
     grads_batch_clients=[x,y]
@@ -152,8 +152,12 @@ if  __name__ == "__main__":
     # grads = aggregate_gradients([grads_0, grads_1])
     # loss_value = aggregate_losses([0.5 * loss_value_0, 0.5 * loss_value_1])
     grads = aggregate_gradients(grads_batch_clients)
-    client_weight = 1.0 / args.num_clients
-    loss_value = aggregate_losses([item * client_weight for item in loss_batch_clients])
+    client_weight = 1.0 / num_clients
+    #loss_value = aggregate_losses([item * client_weight for item in loss_batch_clients])
 
     # grads = unquantize_per_layer(grads, r_maxs, bit_width=q_width)
-    grads = unquantize_per_layer(grads, r_maxs, bit_width=args.q_width)
+    grads = unquantize_per_layer(grads, r_maxs, bit_width=q_width)
+    result=np.array([encryption.decrypt_matrix(privatekey, item).astype(np.float32) for item in grads])
+    print("\nx array = ",x)
+    print("\ny array = ",y)
+    print("\nSum array = ",result)
