@@ -135,6 +135,7 @@ if  __name__ == "__main__":
         min_values.append([np.min([item[layer_idx] for item in grads_batch_clients])])
     grads_max_min = np.concatenate([np.array(max_values),np.array(min_values)],axis=1)
     clipping_thresholds = encryption.calculate_clip_threshold_aciq_g(grads_max_min, sizes, bit_width=q_width)
+    print("clipping_thresholds", clipping_thresholds)
 
 
     r_maxs = [x * num_clients for x in clipping_thresholds]
@@ -154,16 +155,19 @@ if  __name__ == "__main__":
     grads = aggregate_gradients(grads_batch_clients)
     client_weight = 1.0 / num_clients
     #loss_value = aggregate_losses([item * client_weight for item in loss_batch_clients])
-
+    SizeSum=len(pickle.dumps(grads))
     # grads = unquantize_per_layer(grads, r_maxs, bit_width=q_width)
     grads = unquantize_per_layer(grads, r_maxs, bit_width=q_width)
     #result=np.array([encryption.decrypt_matrix(privatekey, item).astype(np.float32) for item in grads])
+    print("Clipping and quantize only, no encryption\n\n")
     print("\nx array = ",x)
+    
     print("\ny array = ",y)
     print("\nSum array = ",grads)
-
-
-
+    
+    print("\nSizex= ", len(pickle.dumps(grads_batch_clients[0])))
+    print("\nSizey= ", len(pickle.dumps(grads_batch_clients[1])))
+    print("\nSizeSum= ", SizeSum)
     print("\n\n\nStarting en_batch ") 
     theta = 2.5
     # clipping_thresholds = encryption.calculate_clip_threshold(grads_0) return [theta * np.std(x) for x in grads]
@@ -208,6 +212,7 @@ if  __name__ == "__main__":
     enc_grads_batch_clients = []
     og_shape_batch_clients = []
     batchsize=16
+    
     for item in grads_batch_clients:
         enc_grads_temp, og_shape_temp = batch_enc_per_layer(publickey=publickey, party=item,
                                                             r_maxs=r_maxs,
@@ -215,6 +220,7 @@ if  __name__ == "__main__":
                                                             batch_size=batchsize)
         enc_grads_batch_clients.append(enc_grads_temp)
         og_shape_batch_clients.append(og_shape_temp)
+    serialized_grads_1 = pickle.dumps(enc_grads_batch_clients[0])    
 
     # loss_value_0 = publickey.encrypt(loss_value_0)
     # loss_value_1 = publickey.encrypt(loss_value_1)
@@ -223,7 +229,7 @@ if  __name__ == "__main__":
     # grads = aggregate_gradients([enc_grads_0, enc_grads_1])
     # loss_value = aggregate_losses([0.5 * loss_value_0, 0.5 * loss_value_1])
     grads = aggregate_gradients(enc_grads_batch_clients)
-    serialized_grads = pickle.dumps(grads)
+    serialized_grads_final = pickle.dumps(grads)
     #client_weight = 1.0 / num_clients
     #loss_value = aggregate_losses([item * client_weight for item in loss_batch_clients])
 
@@ -233,4 +239,5 @@ if  __name__ == "__main__":
     grads = batch_dec_per_layer(privatekey=privatekey, party=grads, og_shapes=og_shape_batch_clients[0],
                                 r_maxs=r_maxs, bit_width=q_width, batch_size=batchsize)
     print("\n\nResult= ", grads)
-    print("\n\nSize= ", len(serialized_grads))
+    print("\n\nSize1= ", len(serialized_grads_1))
+    print("\n\nSizeSum= ", len(serialized_grads_final))
