@@ -213,12 +213,15 @@ def basic_average_gradients_cq_ben(model):
     for param in model.parameters():
 #        if type(param) is torch.Tensor:
             #np_param_grad_data=param.grad.data.numpy()
-            num_clients=2
+            
+            
+            
+            num_clients=1
             grads_batch_clients=[param.grad.data.numpy()]
             q_width=16
             grads_batch_clients_mean = []
             grads_batch_clients_mean_square = []
-            for client_idx in range(len(grads_batch_clients)):
+            for client_idx in range(num_clients):
                 temp_mean = [np.mean(grads_batch_clients[client_idx][layer_idx])
                                 for layer_idx in range(len(grads_batch_clients[client_idx]))]
                 temp_mean_square = [np.mean(grads_batch_clients[client_idx][layer_idx] ** 2)
@@ -249,43 +252,40 @@ def basic_average_gradients_cq_ben(model):
                                                                     batch_size=batchsize)
                 enc_grads_batch_clients.append(enc_grads_temp)
                 og_shape_batch_clients.append(og_shape_temp)
-            serialized_grads_1 = pickle.dumps(enc_grads_batch_clients[0])    
+            grads_batch_this = enc_grads_batch_clients[0]
 
-            grads = aggregate_gradients(enc_grads_batch_clients)
-            serialized_grads_final = pickle.dumps(grads)
-
-            grads = batch_dec_per_layer(privatekey=privatekey, party=grads, og_shapes=og_shape_batch_clients[0],
-                                        r_maxs=r_maxs, bit_width=q_width, batch_size=batchsize)
-
-
-
-
-
-
-            enc_grads_batch = [encryption.encrypt_matrix(publickey, x) for x in np_param_grad_data]
-            model.mybuf=copy.deepcopy(enc_grads_batch)
+            grads_batch_this_serialised=pickle.dumps(grads_batch_this)
+            tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
+            model.mybuf=copy.deepcopy(tensor_to_send)    
+                       
+            
 #            model.testbuf=torch.tensor(np.zeros(1))
             #Tree Upward
 #           for i in range(int(math.log2(size))):
 #           for i in range(len(btreedata)):
             for currentrow in btreedata1:
                          if int(currentrow[0]) == rank:
-                           dist.send(tensor=enc_grads_batch,dst=int(currentrow[1]))
-                           bytes_sent += enc_grads_batch.nelement() * enc_grads_batch.element_size()
+                           dist.send(tensor=tensor_to_send,dst=int(currentrow[1]))
+                           bytes_sent += len(tensor_to_send)
                            messages_sent += 1
                          elif int(currentrow[1]) == rank:
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
-#                           param.grad.data+=model.mybuf
+#                          param.grad.data+=model.mybuf
+                           received_bytes = bytes(model.mybuf.tolist())
+                           grads_batch_that=pickle.loads(received_bytes)
+                           #cipherz = pickle.loads(received_bytes)
                            both_gradients=[]
-                           both_gradients.append(enc_grads_batch)
-                           both_gradients.append(model.mybuf)
-                           enc_grads_batch = aggregate_gradients(both_gradients)
+                           both_gradients.append(grads_batch_this)
+                           both_gradients.append(grads_batch_that)
+                           grads_batch_this = aggregate_gradients(both_gradients)
+                           grads_batch_this_serialised=pickle.dumps(grads_batch_this)
+                           tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
             if rank == size - 1:
-                 dec_grads_batch=np.array([encryption.decrypt_matrix(privatekey, item).astype(np.float32) for item in enc_grads_batch])
-                 param.grad.data = torch.from_numpy(dec_grads_batch)    
-
+                 grads_batch_final = batch_dec_per_layer(privatekey=privatekey, party=grads_batch_this, og_shapes=og_shape_batch_clients[0],
+                                            r_maxs=r_maxs, bit_width=args.q_width, batch_size=args.batch_size)
+                 param.grad.data = torch.from_numpy(grads_batch_final)    
 #Tree Downward
-
+            model.mybuf=copy.deepcopy(param.grad.data)
             for currentrow in btreedata2:
                         if int(currentrow[0]) == rank:
                            dist.send(tensor=param.grad.data,dst=int(currentrow[1]))
@@ -368,7 +368,7 @@ def basic_average_gradients_cq(model):
                  param.grad.data = torch.from_numpy(grads_batch_final)    
 
 #Tree Downward
-
+            model.mybuf=copy.deepcopy(param.grad.data)
             for currentrow in btreedata2:
                         if int(currentrow[0]) == rank:
                            dist.send(tensor=param.grad.data,dst=int(currentrow[1]))
