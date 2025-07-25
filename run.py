@@ -17,6 +17,9 @@ import logging
 import time
 from hashlib import sha256
 
+from joblib import Parallel, delayed
+import multiprocessing
+
 from math import ceil
 from random import Random
 from torch.autograd import Variable
@@ -26,6 +29,7 @@ from functools import reduce
 
 from ftl.encryption import paillier, encryption
 
+N_JOBS = multiprocessing.cpu_count()
 
 publickey=paillier.PaillierPublicKey(27236700922646976555595848507913589494886491119135730116014077185311243444450372255376489388880173022641848729747213088746475118480344996406749938547224285029951417411158327330610634671230458266993515963753271442282969744291116368707834837036890519842176076657317424175485854349519237230877898852294685281803161775833139254050216610420167131637216465657783550454961204111753470621658424459969937833601118914414496472033175054121693273513687334787107976849759736841476647931918984474457173711208172669939800415050356154977238127550304510079658979903408556459392897794799075517038480041829170731623511642064703877042081)
 
@@ -347,9 +351,6 @@ def basic_average_gradients_cq(model):
                            dist.send(tensor=tensor_to_send,dst=int(currentrow[1]))
                            bytes_sent += len(tensor_to_send)
                            messages_sent += 1
-                           
-            
-                           
                          elif int(currentrow[1]) == rank:
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
 #                          param.grad.data+=model.mybuf
