@@ -124,51 +124,8 @@ if  __name__ == "__main__":
     # print("\nSum array = ",result)
     # resulttensor=torch.from_numpy(result)
     #print("\nSum tensor = ",resulttensor)
-    num_clients=2
-    grads_batch_clients=[x.numpy(),y.numpy()]
-    q_width=16
-    sizes = [item.size * num_clients for item in grads_batch_clients[0]]
-    max_values = []
-    min_values = []
-    for layer_idx in range(len(grads_batch_clients[0])):
-        max_values.append([np.max([item[layer_idx] for item in grads_batch_clients])])
-        min_values.append([np.min([item[layer_idx] for item in grads_batch_clients])])
-    grads_max_min = np.concatenate([np.array(max_values),np.array(min_values)],axis=1)
-    clipping_thresholds = encryption.calculate_clip_threshold_aciq_g(grads_max_min, sizes, bit_width=q_width)
-    print("clipping_thresholds", clipping_thresholds)
 
-
-    r_maxs = [x * num_clients for x in clipping_thresholds]
-
-    # grads_0 = encryption.clip_with_threshold(grads_0, clipping_thresholds)
-    # grads_1 = encryption.clip_with_threshold(grads_1, clipping_thresholds)
-    grads_batch_clients = [encryption.clip_with_threshold(item, clipping_thresholds)
-                            for item in grads_batch_clients]
-
-    # grads_0 = quantize_per_layer(grads_0, r_maxs, bit_width=q_width)
-    # grads_1 = quantize_per_layer(grads_1, r_maxs, bit_width=q_width)
-    grads_batch_clients = [quantize_per_layer(item, r_maxs, bit_width=q_width)
-                            for item in grads_batch_clients]
-    #breakpoint()
-    # grads = aggregate_gradients([grads_0, grads_1])
-    # loss_value = aggregate_losses([0.5 * loss_value_0, 0.5 * loss_value_1])
-    grads = aggregate_gradients(grads_batch_clients)
-    client_weight = 1.0 / num_clients
-    #loss_value = aggregate_losses([item * client_weight for item in loss_batch_clients])
-    SizeSum=len(pickle.dumps(grads))
-    # grads = unquantize_per_layer(grads, r_maxs, bit_width=q_width)
-    grads = unquantize_per_layer(grads, r_maxs, bit_width=q_width)
-    #result=np.array([encryption.decrypt_matrix(privatekey, item).astype(np.float32) for item in grads])
-    print("Clipping and quantize only, no encryption\n\n")
-    print("\nx array = ",x)
-    
-    print("\ny array = ",y)
-    print("\nSum array = ",grads)
-    
-    print("\nSizex= ", len(pickle.dumps(grads_batch_clients[0])))
-    print("\nSizey= ", len(pickle.dumps(grads_batch_clients[1])))
-    print("\nSizeSum= ", SizeSum)
-    print("\n\n\nStarting en_batch ") 
+    print("\n\n\nStarting en_alex_batch ") 
     theta = 2.5
     # clipping_thresholds = encryption.calculate_clip_threshold(grads_0) return [theta * np.std(x) for x in grads]
     # theta = 2.5
@@ -177,7 +134,7 @@ if  __name__ == "__main__":
     num_clients=2
     grads_batch_clients=[x.numpy(),y.numpy()]
     q_width=16
-    sizes = [item.size * num_clients for item in grads_batch_clients[0]]
+    # sizes = [item.size * num_clients for item in grads_batch_clients[0]]
 
     grads_batch_clients_mean = []
     grads_batch_clients_mean_square = []
@@ -241,3 +198,58 @@ if  __name__ == "__main__":
     print("\n\nResult= ", grads)
     print("\n\nSize1= ", len(serialized_grads_1))
     print("\n\nSizeSum= ", len(serialized_grads_final))
+
+#aciq-quan
+    num_clients=2
+    grads_batch_clients=[x.numpy(),y.numpy()]
+    q_width=16
+
+    sizes = [item.size * num_clients for item in grads_batch_clients[0]]
+    max_values = []
+    min_values = []
+    for layer_idx in range(len(grads_batch_clients[0])):
+        max_values.append([np.max([item[layer_idx] for item in grads_batch_clients])])
+        min_values.append([np.min([item[layer_idx] for item in grads_batch_clients])])
+    grads_max_min = np.concatenate([np.array(max_values),np.array(min_values)],axis=1)
+    clipping_thresholds = encryption.calculate_clip_threshold_aciq_g(grads_max_min, sizes, bit_width=q_width)
+    print("clipping_thresholds", clipping_thresholds)
+
+
+    r_maxs = [x * num_clients for x in clipping_thresholds]
+
+    # grads_0 = encryption.clip_with_threshold(grads_0, clipping_thresholds)
+    # grads_1 = encryption.clip_with_threshold(grads_1, clipping_thresholds)
+    grads_batch_clients = [encryption.clip_with_threshold(item, clipping_thresholds)
+                            for item in grads_batch_clients]
+
+    # grads_0 = quantize_per_layer(grads_0, r_maxs, bit_width=q_width)
+    # grads_1 = quantize_per_layer(grads_1, r_maxs, bit_width=q_width)
+    #grads_batch_clients = [quantize_per_layer(item, r_maxs, bit_width=q_width)
+    #                        for item in grads_batch_clients]
+    g0=[quantize_per_layer(item, r_maxs, bit_width=q_width)
+                            for item in grads_batch_clients][0]
+    g1=[quantize_per_layer(item, r_maxs, bit_width=q_width)
+                            for item in grads_batch_clients][1]
+    #g0=grads_batch_clients[0]
+    #g1=grads_batch_clients[1]
+    #breakpoint()
+    # grads = aggregate_gradients([grads_0, grads_1])
+    # loss_value = aggregate_losses([0.5 * loss_value_0, 0.5 * loss_value_1])
+    grads = aggregate_gradients([g0,g1])
+    client_weight = 1.0 / num_clients
+    #loss_value = aggregate_losses([item * client_weight for item in loss_batch_clients])
+    SizeSum=len(pickle.dumps(grads))
+    # grads = unquantize_per_layer(grads, r_maxs, bit_width=q_width)
+    grads = unquantize_per_layer(grads, r_maxs, bit_width=q_width)
+    #result=np.array([encryption.decrypt_matrix(privatekey, item).astype(np.float32) for item in grads])
+    print("aciq-quan\n\n")
+    print("\nx array = ",x)
+    
+    print("\ny array = ",y)
+    print("\nSum array = ",grads)
+    
+    print("\nSizex= ", len(pickle.dumps(grads_batch_clients[0])))
+    print("\nSizey= ", len(pickle.dumps(grads_batch_clients[1])))
+    print("\nSizeSum= ", SizeSum)
+   
+   
