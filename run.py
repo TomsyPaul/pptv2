@@ -340,20 +340,25 @@ def basic_average_gradients_cq(model):
             
             grads_batch_this_serialised=pickle.dumps(grads_batch_this)
             tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
-            model.mybuf=copy.deepcopy(tensor_to_send)
+            #model.mybuf=copy.deepcopy(tensor_to_send)
             
-            breakpoint()    
+            #breakpoint()    
             
 #            model.testbuf=torch.tensor(np.zeros(1))
             #Tree Upward
 #           for i in range(int(math.log2(size))):
 #           for i in range(len(btreedata)):
             for currentrow in btreedata1:
+                         #logging.info(f"Rank,{rank},currentrow,{currentrow[0],currentrow[1]}")
                          if int(currentrow[0]) == rank:
+                           dist.send(tensor=torch.tensor(len(tensor_to_send),dtype=torch.int64),dst=int(currentrow[1]))
                            dist.send(tensor=tensor_to_send,dst=int(currentrow[1]))
                            bytes_sent += len(tensor_to_send)
                            messages_sent += 1
                          elif int(currentrow[1]) == rank:
+                           temp_tensor=torch.tensor(0,dtype=torch.int64)
+                           dist.recv(tensor=temp_tensor,src=int(currentrow[0]))
+                           model.mybuf=torch.ByteTensor(temp_tensor.item())
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
 #                          param.grad.data+=model.mybuf
                            received_bytes = bytes(model.mybuf.tolist())
@@ -365,7 +370,7 @@ def basic_average_gradients_cq(model):
                            grads_batch_this = aggregate_gradients(both_gradients)
                            grads_batch_this_serialised=pickle.dumps(grads_batch_this)
                            tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
-                         logging.info(f"Rank,{rank},currentrow,{currentrow[0],currentrow[1]}")  
+                         
             if rank == size - 1:
                  grads_batch_final=unquantize_per_layer(grads_batch_this, r_maxs, bit_width=q_width)
                  param.grad.data = torch.from_numpy(grads_batch_final)    
