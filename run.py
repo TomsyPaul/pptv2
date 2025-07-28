@@ -213,9 +213,9 @@ def basic_average_gradients_cq_ben(model):
     for param in model.parameters():
 #        if type(param) is torch.Tensor:
             #np_param_grad_data=param.grad.data.numpy()
-            
-            
-            
+            if param.dim() == 1:
+              continue
+          
             num_clients=1
             grads_batch_clients=[param.grad.data.numpy()]
             q_width=16
@@ -243,13 +243,13 @@ def basic_average_gradients_cq_ben(model):
 
             enc_grads_batch_clients = []
             og_shape_batch_clients = []
-            batchsize=16
+            batch_size=16
             
             for item in grads_batch_clients:
                 enc_grads_temp, og_shape_temp = batch_enc_per_layer(publickey=publickey, party=item,
                                                                     r_maxs=r_maxs,
                                                                     bit_width=q_width,
-                                                                    batch_size=batchsize)
+                                                                    batch_size=batch_size)
                 enc_grads_batch_clients.append(enc_grads_temp)
                 og_shape_batch_clients.append(og_shape_temp)
             grads_batch_this = enc_grads_batch_clients[0]
@@ -282,7 +282,7 @@ def basic_average_gradients_cq_ben(model):
                            tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
             if rank == size - 1:
                  grads_batch_final = batch_dec_per_layer(privatekey=privatekey, party=grads_batch_this, og_shapes=og_shape_batch_clients[0],
-                                            r_maxs=r_maxs, bit_width=args.q_width, batch_size=args.batch_size)
+                                            r_maxs=r_maxs, bit_width=q_width, batch_size=batch_size)
                  param.grad.data = torch.from_numpy(grads_batch_final)    
 #Tree Downward
             model.mybuf=copy.deepcopy(param.grad.data)
@@ -313,6 +313,8 @@ def basic_average_gradients_cq(model):
     messages_sent=0
     for param in model.parameters():
 #        if type(param) is torch.Tensor:
+            if param.dim() == 1:
+              continue
             num_clients=1
             grads_batch_clients=[param.grad.data.numpy()]
             q_width=16
@@ -340,7 +342,7 @@ def basic_average_gradients_cq(model):
             tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
             model.mybuf=copy.deepcopy(tensor_to_send)
             
-                
+            breakpoint()    
             
 #            model.testbuf=torch.tensor(np.zeros(1))
             #Tree Upward
@@ -363,8 +365,9 @@ def basic_average_gradients_cq(model):
                            grads_batch_this = aggregate_gradients(both_gradients)
                            grads_batch_this_serialised=pickle.dumps(grads_batch_this)
                            tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
+                         logging.info(f"Rank,{rank},currentrow,{currentrow[0],currentrow[1]}")  
             if rank == size - 1:
-                 grads_batch_final=unquantize_per_layer(grads_batch_this, r_maxs, bit_width=args.q_width)
+                 grads_batch_final=unquantize_per_layer(grads_batch_this, r_maxs, bit_width=q_width)
                  param.grad.data = torch.from_numpy(grads_batch_final)    
 
 #Tree Downward
@@ -388,7 +391,7 @@ def run(rank, size, epochs, K, averager, runid):
     torch.manual_seed(1234)
     train_set, bsz = partition_dataset()
     model = Net()
-    model = model
+#    model = model
 #    model = model.cuda(rank)
     optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.5)
 
