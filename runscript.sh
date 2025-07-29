@@ -6,6 +6,7 @@ epochs=$2
 averager=$3
 K=$4
 runid=$5
+root=$6
 i=0
 while  read ip
 do
@@ -33,7 +34,7 @@ while  read ip
 do
  if [ ! -z $ip ]
  then
-   gnome-terminal --window -- bash -c "ssh -n tomsy@$ip docker exec c$i conda run -n batchcrypt python run.py --rank=$i --size=$size --epochs=$epochs --averager=$averager --K=$K --runid=$runid; echo Output of $i; exec bash"   
+   gnome-terminal --window -- bash -c "ssh -n tomsy@$ip docker exec c$i conda run -n batchcrypt python run.py --rank=$i --size=$size --epochs=$epochs --averager=$averager --K=$K --runid=$runid --root=$root; echo Output of $i; exec bash"   
  ((i++))     	
  fi
 done < hostips

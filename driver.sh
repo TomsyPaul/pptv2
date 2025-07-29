@@ -7,7 +7,7 @@ worldsize=$5
 head -n $worldsize hostipsall > hostips
 
 #generate layouts
-python3 treegen.py --n=$worldsize
+root=`python3 treegen.py --n=$worldsize`
 
 ##generate secrets (n-1)
 #>secrets
@@ -75,7 +75,7 @@ then
    bash applytoall.sh 'docker start' c
 else
 echo $worldsize-$averager-$epochs-$runid>>logslist
-bash runscript.sh $coding $epochs $averager $K $runid
+bash runscript.sh $coding $epochs $averager $K $runid $root
 read
 echo "$worldsize,$2,$3,$K,$runid" > "results/$worldsize-$averager-$epochs-$runid"
 echo -e "******************\n" >> "results/$worldsize-$averager-$epochs-$runid"

@@ -198,7 +198,7 @@ def unquantize_per_layer(party, r_maxs, bit_width=16):
     )
     return np.array(result)
 
-def basic_average_gradients_cq_ben(model):
+def basic_average_gradients_cq_ben(model,root):
     """ Gradient averaging using Binomial Tree., Batch Crypt with c,q and ben """
 #    print("Using DFL")
     size = dist.get_world_size()
@@ -285,7 +285,7 @@ def basic_average_gradients_cq_ben(model):
                            grads_batch_this_serialised=pickle.dumps(grads_batch_this)
                            tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
             #breakpoint()
-            if rank == size - 1:
+            if rank == root:
                  grads_batch_final = batch_dec_per_layer(privatekey=privatekey, party=grads_batch_this, og_shapes=og_shape_batch_clients[0],
                                             r_maxs=r_maxs, bit_width=q_width, batch_size=batch_size)
                  param.grad.data = torch.tensor(grads_batch_final)    
@@ -305,7 +305,7 @@ def basic_average_gradients_cq_ben(model):
     return bytes_sent,messages_sent        
 
 
-def basic_average_gradients_cq(model):
+def basic_average_gradients_cq(model,root):
     """ Gradient averaging using Binomial Tree., Batch Crypt with aciq-quan """
 #    print("Using DFL")
     size = dist.get_world_size()
@@ -376,7 +376,7 @@ def basic_average_gradients_cq(model):
                            grads_batch_this_serialised=pickle.dumps(grads_batch_this)
                            tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
                          
-            if rank == size - 1:
+            if rank == root:
                  grads_batch_final=unquantize_per_layer(grads_batch_this, r_maxs, bit_width=q_width)
                  param.grad.data = torch.from_numpy(grads_batch_final)    
 
@@ -396,7 +396,7 @@ def basic_average_gradients_cq(model):
     return bytes_sent,messages_sent        
 
 
-def run(rank, size, epochs, K, averager, runid):
+def run(rank, size, epochs, K, averager, runid, root):
     """ Distributed Synchronous SGD Example """
     torch.manual_seed(1234)
     train_set, bsz = partition_dataset()
@@ -428,11 +428,11 @@ def run(rank, size, epochs, K, averager, runid):
             skip += 1
             if (skip % K) == 0:
                if averager == "DFLBASICCQ":
-                  bytes_sent,messages_sent=basic_average_gradients_cq(model)
+                  bytes_sent,messages_sent=basic_average_gradients_cq(model,root)
                   total_bytes += bytes_sent
                   total_messgaes += messages_sent
                elif averager == "DFLBASICCQBEN":
-                  bytes_sent,messages_sent=basic_average_gradients_cq_ben(model)                  
+                  bytes_sent,messages_sent=basic_average_gradients_cq_ben(model,root)                  
                   total_bytes += bytes_sent
                   total_messgaes += messages_sent               
             optimizer.step()
@@ -446,10 +446,10 @@ def run(rank, size, epochs, K, averager, runid):
 
 
 
-def init_processes(rank, size, epochs, K, averager, runid, fn, backend='gloo'):
+def init_processes(rank, size, epochs, K, averager, runid, root, fn, backend='gloo'):
    """ Initialize the distributed environment. """
    dist.init_process_group(backend, rank=rank, world_size=size)
-   fn(rank, size, epochs, K, averager, runid)
+   fn(rank, size, epochs, K, averager, runid, root)
 
 if __name__ == "__main__":
 #    rank=int(os.environ['LOCAL_RANK'])
@@ -465,6 +465,7 @@ if __name__ == "__main__":
     parser.add_argument("--averager", type=str)
     parser.add_argument("--K", type=int)
     parser.add_argument("--runid", type=str)
+    parser.add_argument("--root", type=int)
     args = parser.parse_args()
     rank = int(args.rank)
     size = int(args.size)
@@ -472,4 +473,5 @@ if __name__ == "__main__":
     averager = args.averager
     K = int(args.K)
     runid = args.runid
-    init_processes(rank, size, epochs, K, averager, runid, run)
+    root = int(args.root)
+    init_processes(rank, size, epochs, K, averager, runid, root, run)
