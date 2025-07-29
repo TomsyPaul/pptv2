@@ -256,7 +256,7 @@ def basic_average_gradients_cq_ben(model):
 
             grads_batch_this_serialised=pickle.dumps(grads_batch_this)
             tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
-            model.mybuf=copy.deepcopy(tensor_to_send)    
+            #model.mybuf=copy.deepcopy(tensor_to_send)    
                        
             
 #            model.testbuf=torch.tensor(np.zeros(1))
@@ -265,10 +265,14 @@ def basic_average_gradients_cq_ben(model):
 #           for i in range(len(btreedata)):
             for currentrow in btreedata1:
                          if int(currentrow[0]) == rank:
+                           dist.send(tensor=torch.tensor(len(tensor_to_send),dtype=torch.int64),dst=int(currentrow[1]))
                            dist.send(tensor=tensor_to_send,dst=int(currentrow[1]))
                            bytes_sent += len(tensor_to_send)
                            messages_sent += 1
                          elif int(currentrow[1]) == rank:
+                           temp_tensor=torch.tensor(0,dtype=torch.int64)
+                           dist.recv(tensor=temp_tensor,src=int(currentrow[0]))
+                           model.mybuf=torch.ByteTensor(temp_tensor.item())
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
 #                          param.grad.data+=model.mybuf
                            received_bytes = bytes(model.mybuf.tolist())
@@ -280,10 +284,11 @@ def basic_average_gradients_cq_ben(model):
                            grads_batch_this = aggregate_gradients(both_gradients)
                            grads_batch_this_serialised=pickle.dumps(grads_batch_this)
                            tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
+            #breakpoint()
             if rank == size - 1:
                  grads_batch_final = batch_dec_per_layer(privatekey=privatekey, party=grads_batch_this, og_shapes=og_shape_batch_clients[0],
                                             r_maxs=r_maxs, bit_width=q_width, batch_size=batch_size)
-                 param.grad.data = torch.from_numpy(grads_batch_final)    
+                 param.grad.data = torch.tensor(grads_batch_final)    
 #Tree Downward
             model.mybuf=copy.deepcopy(param.grad.data)
             for currentrow in btreedata2:
