@@ -16,6 +16,12 @@ import logging
 import time
 from hashlib import sha256
 
+totaltime=0
+starttime=0
+endtime=0
+
+
+
 from math import ceil
 from random import Random
 from torch.autograd import Variable
@@ -105,6 +111,7 @@ def partition_dataset():
 def basic_average_gradients(model):
     """ Gradient averaging using Binomial Tree. """
 #    print("Using DFL")
+    global totaltime, starttime, endtime
     size = dist.get_world_size()
     rank = dist.get_rank()
     with open('layout-up', newline='') as csvfile1:
@@ -120,6 +127,8 @@ def basic_average_gradients(model):
             #Tree Upward
 #           for i in range(int(math.log2(size))):
 #           for i in range(len(btreedata)):
+            endtime=time.time()
+            totaltime+=(endtime-starttime)
             for currentrow in btreedata1:
                          if int(currentrow[0]) == rank:
                            dist.send(tensor=param.grad.data,dst=int(currentrow[1]))
@@ -141,6 +150,7 @@ def basic_average_gradients(model):
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
                            param.grad.data=model.mybuf
 #           dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM, group=0)
+            starttime=time.time()
             param.grad.data /= size
     return bytes_sent,messages_sent        
 
@@ -178,6 +188,7 @@ def set_leaf_pair_adder(rank, size, model):
 def my_average_gradients(model):
     """ Gradient averaging using Binomial Tree with SS """
 #    print("Using DFL")
+    global totaltime, starttime, endtime
     size = dist.get_world_size()
     rank = dist.get_rank()
     with open('layout-up', newline='') as csvfile1:
@@ -201,6 +212,8 @@ def my_average_gradients(model):
                 else:
                     additive -= float(next(nextadjustment))
             param.grad.data += additive
+            endtime=time.time()
+            totaltime+=(endtime-starttime)
 #Tree Upward
 #           for i in range(int(math.log2(size))):
 #           for i in range(len(btreedata)):
@@ -225,6 +238,7 @@ def my_average_gradients(model):
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
                            param.grad.data=model.mybuf
 #           dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM, group=0)
+            starttime=time.time()
             param.grad.data /= size
     return bytes_sent,messages_sent
 def Add_SS(v, n, seed):
@@ -242,6 +256,7 @@ def Add_SS(v, n, seed):
 
 def their_average_gradients(model):
     """ Gradient averaging using modified LiPFed """
+    global totaltime, starttime, endtime
     size = dist.get_world_size()
     rank = dist.get_rank()
     with open('layout', newline='') as csvfile1:
@@ -267,6 +282,8 @@ def their_average_gradients(model):
                          if int(btreedata1[rowindex][0]) == rank:
                            number_of_splits=splits[rank]
                            splitparam=Add_SS(param.grad.data, number_of_splits, seedvalue)
+                           endtime=time.time()
+                           totaltime+=(endtime-starttime)
                            for j in range(number_of_splits):
                                targetnode=int(btreedata1[rowindex][1])
                                dist.send(tensor=splitparam[j],dst=targetnode)
@@ -284,6 +301,7 @@ def their_average_gradients(model):
                          else:
                            rowindex += 1       
 #            dist.barrier()
+            starttime = time.time()
             dist.all_reduce(model.mybuf, op=dist.reduce_op.SUM)
 #           all reduce makes each node send model parameters at least log2(n) times
 #            bytes_sent += math.log2(size) * model.mybuf.nelement() * splitparam[j].element_size()
@@ -299,6 +317,7 @@ def their_average_gradients(model):
 #   print("Rank = ", rank)
 def run(rank, size, epochs, K, averager, runid):
     """ Distributed Synchronous SGD Example """
+    global totaltime, starttime, endtime
     torch.manual_seed(1234)
     train_set, bsz = partition_dataset()
     model = Net()
@@ -359,8 +378,9 @@ def run(rank, size, epochs, K, averager, runid):
             epoch_loss / num_batches)
         logging.info(f"Rank,{rank},epoch,{epoch},{epoch_loss/num_batches:.4f}")
     endtime = time.time()
-    print(endtime - starttime)
-    logging.info(f"Rank,{rank},TIME,{endtime-starttime:.4f},BYTES,{total_bytes},MESSAGES,{total_messgaes}")    
+    totaltime += (endtime - starttime)
+    print(totaltime)
+    logging.info(f"Rank,{rank},TIME,{totaltime:.4f},BYTES,{total_bytes},MESSAGES,{total_messgaes}")    
 
 
 
