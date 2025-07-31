@@ -1,6 +1,5 @@
 #! /bin/bash
-size=`cat hostips | wc -l`
-for i in `ps -A | grep bash | tail -n +3 | tr -s " " | cut -d" " -f2`
+for i in `ps -A | grep bash | tail -n +2 | tr -s " " | cut -d" " -f2`
 do
 kill -9 "$i"
 done

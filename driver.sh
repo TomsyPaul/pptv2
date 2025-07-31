@@ -7,7 +7,7 @@ worldsize=$5
 head -n $worldsize hostipsall > hostips
 
 #generate layouts
-python3 treegen.py --n=$worldsize
+root=`python3 treegen.py --n=$worldsize`
 
 ##generate secrets (n-1)
 #>secrets
@@ -48,7 +48,7 @@ echo layout-down >> files-to-upload
 echo keys >> files-to-upload
 echo run-cifar.py >> files-to-upload
 echo partition_sizes >> files-to-upload
-
+echo ftl >> files-to-upload
 #rest of the process
 mkdir -p results
 coding=$1
@@ -56,6 +56,7 @@ epochs=$2
 averager=$3
 K=$4
 runid=`date +'%Y-%m-%d_%H-%M-%S'`
+echo "RunId = $runid"
 if [ $coding == 'N' ]
 then
    bash applytoall.sh 'docker stop' c
@@ -75,7 +76,7 @@ then
    bash applytoall.sh 'docker start' c
 else
 echo $worldsize-$averager-$epochs-$runid>>logslist
-bash runscript.sh $coding $epochs $averager $K $runid
+bash runscript.sh $coding $epochs $averager $K $runid $root
 read
 echo "$worldsize,$2,$3,$K,$runid" > "results/$worldsize-$averager-$epochs-$runid"
 echo -e "******************\n" >> "results/$worldsize-$averager-$epochs-$runid"

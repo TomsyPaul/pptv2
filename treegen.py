@@ -64,7 +64,7 @@ if __name__ == "__main__":
      n = int(args.n)
      
      r,t=generate_tree(int(n),0)
-#     print(r,t)
+     print(r)
      l=[]
      t1=[]
      f1 = open("layout-up", "w")

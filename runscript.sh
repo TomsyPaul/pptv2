@@ -6,6 +6,7 @@ epochs=$2
 averager=$3
 K=$4
 runid=$5
+root=$6
 i=0
 while  read ip
 do
@@ -15,8 +16,13 @@ do
    then
    while read filename
    do
-      scp $filename tomsy@$ip:mydfl
+      scp -r $filename tomsy@$ip:mydfl
+      if [[ -d $filename ]]
+      then
+      ssh -n tomsy@$ip docker cp /home/tomsy/mydfl/$filename/. c$i:/workspace/$filename
+      else
       ssh -n tomsy@$ip docker cp /home/tomsy/mydfl/$filename c$i:/workspace/$filename
+      fi
    done < files-to-upload      
    fi   
  ((i++))     	  
@@ -28,7 +34,7 @@ while  read ip
 do
  if [ ! -z $ip ]
  then
-   gnome-terminal --window -- bash -c "ssh -n tomsy@$ip docker exec c$i python run-cifar.py --rank=$i --size=$size --epochs=$epochs --averager=$averager --K=$K --runid=$runid; echo Output of $i; exec bash"   
+   gnome-terminal --window -- bash -c "ssh -n tomsy@$ip docker exec c$i conda run -n batchcrypt python run.py --rank=$i --size=$size --epochs=$epochs --averager=$averager --K=$K --runid=$runid --root=$root; echo Output of $i; exec bash"   
  ((i++))     	
  fi
 done < hostips
