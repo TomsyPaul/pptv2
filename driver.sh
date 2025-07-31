@@ -56,6 +56,7 @@ epochs=$2
 averager=$3
 K=$4
 runid=`date +'%Y-%m-%d_%H-%M-%S'`
+echo "RunId = $runid"
 if [ $coding == 'N' ]
 then
    bash applytoall.sh 'docker stop' c
