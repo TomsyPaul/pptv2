@@ -65,29 +65,57 @@ class DataPartitioner(object):
 
 class Net(nn.Module):
     def __init__(self):
-        super().__init__()
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
+            super().__init__()
+            self.layer1 = nn.Sequential(
+                nn.Conv2d(3, 96, kernel_size=11, stride=4, padding=0),
+                nn.BatchNorm2d(96),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size = 3, stride = 2))
+            self.layer2 = nn.Sequential(
+                nn.Conv2d(96, 256, kernel_size=5, stride=1, padding=2),
+                nn.BatchNorm2d(256),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size = 3, stride = 2))
+            self.layer3 = nn.Sequential(
+                nn.Conv2d(256, 384, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(384),
+                nn.ReLU())
+            self.layer4 = nn.Sequential(
+                nn.Conv2d(384, 384, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(384),
+                nn.ReLU())
+            self.layer5 = nn.Sequential(
+                nn.Conv2d(384, 256, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(256),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size = 3, stride = 2))
+            self.fc = nn.Sequential(
+                nn.Dropout(0.5),
+                nn.Linear(9216, 4096),
+                nn.ReLU())
+            self.fc1 = nn.Sequential(
+                nn.Dropout(0.5),
+                nn.Linear(4096, 4096),
+                nn.ReLU())
+            self.fc2= nn.Sequential(
+                nn.Linear(4096, 10))
 
-
-        self.mybuf=[]
-        self.splitbuf=[]
-#        self.secret=float(0)
-        self.aux=dict(isleaf=False,partner=0,adder=False,key="1234567890")
+            self.mybuf=[]
+            self.splitbuf=[]
+        #   self.secret=float(0)
+            self.aux=dict(isleaf=False,partner=0,adder=False,key="1234567890")
 
     def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = torch.flatten(x, 1) # flatten all dimensions except batch
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-#        return F.log_softmax(x, dim=1)
-        return x
+            out = self.layer1(x)
+            out = self.layer2(out)
+            out = self.layer3(out)
+            out = self.layer4(out)
+            out = self.layer5(out)
+            out = out.reshape(out.size(0), -1)
+            out = self.fc(out)
+            out = self.fc1(out)
+            out = self.fc2(out)
+            return out
 
 
 def partition_dataset():
@@ -96,9 +124,13 @@ def partition_dataset():
         './data',
         train=True,
         download=True,
-        transform=transforms.Compose(
-    [transforms.ToTensor(),
-     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]))
+        transform=transforms.Compose([
+                transforms.Resize((227,227)),
+                transforms.ToTensor(),
+                transforms.Normalize(
+            mean=[0.4914, 0.4822, 0.4465],
+            std=[0.2023, 0.1994, 0.2010],),
+            ]))
     size = dist.get_world_size()
     bsz = 128 // size
 #    bsz=4
