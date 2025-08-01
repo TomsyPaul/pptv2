@@ -291,6 +291,8 @@ def their_average_gradients(model):
                                messages_sent += 1
                                rowindex += 1
                          elif int(btreedata1[rowindex][1]) == rank:
+                           endtime=time.time()
+                           totaltime+=(endtime-starttime)
                            dist.recv(tensor=model.splitbuf,src=int(btreedata1[rowindex][0]))
                            if first_receiving == True:
                                 model.mybuf=copy.deepcopy(model.splitbuf)
@@ -299,6 +301,8 @@ def their_average_gradients(model):
                                 model.mybuf+=model.splitbuf
                            rowindex += 1
                          else:
+                           endtime=time.time()
+                           totaltime+=(endtime-starttime)
                            rowindex += 1       
 #            dist.barrier()
             starttime = time.time()
