@@ -426,6 +426,7 @@ def basic_average_gradients_cq(model,root):
 
 def run(rank, size, epochs, K, averager, runid, root):
     """ Distributed Synchronous SGD Example """
+    global totaltime, starttime, endtime
     torch.manual_seed(1234)
     train_set, bsz = partition_dataset()
     model = Net()
