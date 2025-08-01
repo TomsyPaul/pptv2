@@ -17,6 +17,10 @@ import logging
 import time
 from hashlib import sha256
 
+totaltime=0
+starttime=0
+endtime=0
+
 from joblib import Parallel, delayed
 import multiprocessing
 
@@ -205,6 +209,7 @@ def unquantize_per_layer(party, r_maxs, bit_width=16):
 def basic_average_gradients_cq_ben(model,root):
     """ Gradient averaging using Binomial Tree., Batch Crypt with c,q and ben """
 #    print("Using DFL")
+    global totaltime, starttime, endtime
     size = dist.get_world_size()
     rank = dist.get_rank()
     with open('layout-up', newline='') as csvfile1:
@@ -267,6 +272,8 @@ def basic_average_gradients_cq_ben(model,root):
             #Tree Upward
 #           for i in range(int(math.log2(size))):
 #           for i in range(len(btreedata)):
+            endtime=time.time()
+            totaltime+=(endtime-starttime)
             for currentrow in btreedata1:
                          if int(currentrow[0]) == rank:
                            dist.send(tensor=torch.tensor(len(tensor_to_send),dtype=torch.int64),dst=int(currentrow[1]))
@@ -285,13 +292,19 @@ def basic_average_gradients_cq_ben(model,root):
                            both_gradients=[]
                            both_gradients.append(grads_batch_this)
                            both_gradients.append(grads_batch_that)
+                           starttime=time.time()
                            grads_batch_this = aggregate_gradients(both_gradients)
+                           endtime=time.time()
+                           totaltime+=(endtime-starttime)
                            grads_batch_this_serialised=pickle.dumps(grads_batch_this)
                            tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
             #breakpoint()
             if rank == root:
+                 starttime=time.time()
                  grads_batch_final = batch_dec_per_layer(privatekey=privatekey, party=grads_batch_this, og_shapes=og_shape_batch_clients[0],
                                             r_maxs=r_maxs, bit_width=q_width, batch_size=batch_size)
+                 endtime=time.time()
+                 totaltime+=(endtime-starttime)
                  param.grad.data = torch.tensor(grads_batch_final)    
 #Tree Downward
             model.mybuf=copy.deepcopy(param.grad.data)
@@ -305,6 +318,7 @@ def basic_average_gradients_cq_ben(model,root):
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
                            param.grad.data=model.mybuf
 #           dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM, group=0)
+            starttime=time.time()
             param.grad.data /= size
     return bytes_sent,messages_sent        
 
@@ -312,6 +326,7 @@ def basic_average_gradients_cq_ben(model,root):
 def basic_average_gradients_cq(model,root):
     """ Gradient averaging using Binomial Tree., Batch Crypt with aciq-quan """
 #    print("Using DFL")
+    global totaltime, starttime, endtime
     size = dist.get_world_size()
     rank = dist.get_rank()
     with open('layout-up', newline='') as csvfile1:
@@ -357,6 +372,8 @@ def basic_average_gradients_cq(model,root):
             #Tree Upward
 #           for i in range(int(math.log2(size))):
 #           for i in range(len(btreedata)):
+            endtime=time.time()
+            totaltime+=(endtime-starttime)
             for currentrow in btreedata1:
                          #logging.info(f"Rank,{rank},currentrow,{currentrow[0],currentrow[1]}")
                          if int(currentrow[0]) == rank:
@@ -376,12 +393,18 @@ def basic_average_gradients_cq(model,root):
                            both_gradients=[]
                            both_gradients.append(grads_batch_this)
                            both_gradients.append(grads_batch_that)
+                           starttime=time.time()
                            grads_batch_this = aggregate_gradients(both_gradients)
+                           endtime=time.time()
+                           totaltime+=(endtime-starttime)
                            grads_batch_this_serialised=pickle.dumps(grads_batch_this)
                            tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
                          
             if rank == root:
+                 starttime=time.time()
                  grads_batch_final=unquantize_per_layer(grads_batch_this, r_maxs, bit_width=q_width)
+                 endtime=time.time()
+                 totaltime+=(endtime-starttime)
                  param.grad.data = torch.from_numpy(grads_batch_final)    
 
 #Tree Downward
@@ -396,6 +419,7 @@ def basic_average_gradients_cq(model,root):
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
                            param.grad.data=model.mybuf
 #           dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM, group=0)
+            starttime=time.time()
             param.grad.data /= size
     return bytes_sent,messages_sent        
 
@@ -447,8 +471,9 @@ def run(rank, size, epochs, K, averager, runid, root):
             epoch_loss / num_batches)
         logging.info(f"Rank,{rank},epoch,{epoch},{epoch_loss/num_batches:.4f}")
     endtime = time.time()
-    print(endtime - starttime)
-    logging.info(f"Rank,{rank},TIME,{endtime-starttime:.4f},BYTES,{total_bytes},MESSAGES,{total_messgaes}")    
+    totaltime += (endtime - starttime)
+    print(totaltime)
+    logging.info(f"Rank,{rank},TIME,{totaltime:.4f},BYTES,{total_bytes},MESSAGES,{total_messgaes}")    
 
 
 
