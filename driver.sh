@@ -3,6 +3,7 @@
 #git pull https://tomsypaul@github.com/TomsyPaul/mydfl.git 
 #read -p "Enter Worldsize " worldsize
 worldsize=$5
+mode=$6
 #set hostips
 head -n $worldsize hostipsall > hostips
 
@@ -55,7 +56,7 @@ coding=$1
 epochs=$2
 averager=$3
 K=$4
-runid=`date +'%Y-%m-%d_%H-%M-%S'`
+runid="`date +'%Y-%m-%d_%H-%M-%S'`-$mode"
 echo "RunId = $runid"
 if [ $coding == 'N' ]
 then
