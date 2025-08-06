@@ -252,7 +252,7 @@ def basic_average_gradients_cq_ben(model,root):
 
             enc_grads_batch_clients = []
             og_shape_batch_clients = []
-            batch_size=64
+            batch_size=100
             
             for item in grads_batch_clients:
                 enc_grads_temp, og_shape_temp = batch_enc_per_layer(publickey=publickey, party=item,
