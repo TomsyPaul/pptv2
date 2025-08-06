@@ -240,6 +240,7 @@ def basic_average_gradients_cq_ben(model,root):
             grads_batch_clients_mean_square = torch.stack(grads_batch_clients_mean_square, dim=0).numpy()
             grads_batch_clients=grads_batch_clients.numpy()
             layers_size = np.array([_.size for _ in grads_batch_clients[0]])
+            num_clients=size
             clipping_thresholds = theta * (
                         np.sum(grads_batch_clients_mean_square * layers_size, 0) / (layers_size * num_clients)
                         - (np.sum(grads_batch_clients_mean * layers_size, 0) / (layers_size * num_clients)) ** 2) ** 0.5
