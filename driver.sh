@@ -88,11 +88,11 @@ echo "$worldsize,$2,$3,$K,$runid" >> "results/summary"
 
 grep TIME results/$worldsize-$averager-$epochs-$runid | cut -d"," -f4 | awk '{ sum += $1; n++ } END { if (n > 0) print "Average computation time taken = " sum / n "\n"; }' >> results/summary
 
-grep OVERALL results/$worldsize-$averager-$epochs-$runid | cut -d"," -f4 | awk '{ sum += $1; n++ } END { if (n > 0) print "Average Overall time taken = " sum / n "\n"; }' >> results/summary
+grep OVERALL results/$worldsize-$averager-$epochs-$runid | cut -d"," -f6 | awk '{ sum += $1; n++ } END { if (n > 0) print "Average Overall time taken = " sum / n "\n"; }' >> results/summary
 
-grep BYTES results/$worldsize-$averager-$epochs-$runid | cut -d"," -f6 | awk '{ sum += $1; n++ } END { if (n > 0) print "Average bytes sent = " sum / n "\n"; }' >> results/summary
+grep BYTES results/$worldsize-$averager-$epochs-$runid | cut -d"," -f8 | awk '{ sum += $1; n++ } END { if (n > 0) print "Average bytes sent = " sum / n "\n"; }' >> results/summary
 
-grep MESSAGES results/$worldsize-$averager-$epochs-$runid | cut -d"," -f8 | awk '{ sum += $1; n++ } END { if (n > 0) print "Average Messages sent = " sum / n "\n"; }' >> results/summary
+grep MESSAGES results/$worldsize-$averager-$epochs-$runid | cut -d"," -f10 | awk '{ sum += $1; n++ } END { if (n > 0) print "Average Messages sent = " sum / n "\n"; }' >> results/summary
 
 echo -e "Average Loss\n" >> "results/summary"
 
