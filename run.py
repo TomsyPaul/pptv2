@@ -339,7 +339,7 @@ def basic_average_gradients_cq(model,root):
 #        if type(param) is torch.Tensor:
             if param.dim() == 1:
               continue
-            num_clients=1
+            num_clients=size
             grads_batch_clients=[param.grad.data.numpy()]
             q_width=16
 
@@ -349,7 +349,11 @@ def basic_average_gradients_cq(model,root):
             for layer_idx in range(len(grads_batch_clients[0])):
                 max_values.append([np.max([item[layer_idx] for item in grads_batch_clients])])
                 min_values.append([np.min([item[layer_idx] for item in grads_batch_clients])])
-            grads_max_min = np.concatenate([np.array(max_values),np.array(min_values)],axis=1)
+            max_values=torch.tensor(max_values)
+            min_values=torch.tensor(min_values)
+            dist.all_reduce(max_values, op=dist.reduce_op.MAX)
+            dist.all_reduce(min_values, op=dist.reduce_op.MIN)
+            grads_max_min = np.concatenate([max_values.numpy(),min_values.numpy()],axis=1)
             clipping_thresholds = encryption.calculate_clip_threshold_aciq_g(grads_max_min, sizes, bit_width=q_width)
             #print("clipping_thresholds", clipping_thresholds)
 
