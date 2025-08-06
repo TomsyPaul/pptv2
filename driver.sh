@@ -86,7 +86,9 @@ echo -e "Result..\n"
 cat results/$worldsize-$averager-$epochs-$runid
 echo "$worldsize,$2,$3,$K,$runid" >> "results/summary"
 
-grep TIME results/$worldsize-$averager-$epochs-$runid | cut -d"," -f4 | awk '{ sum += $1; n++ } END { if (n > 0) print "Average time taken = " sum / n "\n"; }' >> results/summary
+grep TIME results/$worldsize-$averager-$epochs-$runid | cut -d"," -f4 | awk '{ sum += $1; n++ } END { if (n > 0) print "Average computation time taken = " sum / n "\n"; }' >> results/summary
+
+grep OVERALL results/$worldsize-$averager-$epochs-$runid | cut -d"," -f4 | awk '{ sum += $1; n++ } END { if (n > 0) print "Average Overall time taken = " sum / n "\n"; }' >> results/summary
 
 grep BYTES results/$worldsize-$averager-$epochs-$runid | cut -d"," -f6 | awk '{ sum += $1; n++ } END { if (n > 0) print "Average bytes sent = " sum / n "\n"; }' >> results/summary
 
