@@ -448,7 +448,7 @@ def run(rank, size, epochs, K, averager, runid, root):
     LOG_FILE = "/logs/"+str(size)+"-"+averager+"-"+str(epochs)+"-"+str(runid)
     logging.basicConfig(filename=LOG_FILE, format='%(asctime)s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d_%H-%M-%S')
     starttime = time.time()
-   
+    runstarttime=time.time()
     total_bytes=0
     total_messgaes=0
     
@@ -482,7 +482,9 @@ def run(rank, size, epochs, K, averager, runid, root):
     endtime = time.time()
     totaltime += (endtime - starttime)
     print(totaltime)
-    logging.info(f"Rank,{rank},TIME,{totaltime:.4f},BYTES,{total_bytes},MESSAGES,{total_messgaes}")    
+    runendtime=time.time()
+    totalruntime=runendtime-runstarttime
+    logging.info(f"Rank,{rank},TIME,{totaltime:.4f},OVERALL,{totalruntime:.4f},BYTES,{total_bytes},MESSAGES,{total_messgaes}")    
 
 
 
