@@ -384,6 +384,7 @@ def run(rank, size, epochs, K, averager, runid):
                 model.aux["key"]=allkeys[rank//4][0]
             nextadjustment = getnextadjustment(model.aux["key"])
             
+    runstarttime=time.time()
     total_bytes=0
     total_messgaes=0
     
@@ -422,7 +423,9 @@ def run(rank, size, epochs, K, averager, runid):
     endtime = time.time()
     totaltime += (endtime - starttime)
     print(totaltime)
-    logging.info(f"Rank,{rank},TIME,{totaltime:.4f},BYTES,{total_bytes},MESSAGES,{total_messgaes}")    
+    runendtime=time.time()
+    totalruntime=runendtime-runstarttime
+    logging.info(f"Rank,{rank},TIME,{totaltime:.4f},OVERALL,{totalruntime:.4f},BYTES,{total_bytes},MESSAGES,{total_messgaes}")    
 
 
 
