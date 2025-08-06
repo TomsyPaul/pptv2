@@ -222,20 +222,23 @@ def basic_average_gradients_cq_ben(model,root):
               continue
           
             num_clients=1
-            grads_batch_clients=[param.grad.data.numpy()]
+            grads_batch_clients=torch.tensor([param.grad.data.numpy()])
             q_width=16
-            grads_batch_clients_mean = []
-            grads_batch_clients_mean_square = []
+            
             for client_idx in range(num_clients):
-                temp_mean = [np.mean(grads_batch_clients[client_idx][layer_idx])
-                                for layer_idx in range(len(grads_batch_clients[client_idx]))]
-                temp_mean_square = [np.mean(grads_batch_clients[client_idx][layer_idx] ** 2)
-                                    for layer_idx in range(len(grads_batch_clients[client_idx]))]
-                grads_batch_clients_mean.append(temp_mean)
-                grads_batch_clients_mean_square.append(temp_mean_square)
-            grads_batch_clients_mean = np.array(grads_batch_clients_mean)
-            grads_batch_clients_mean_square = np.array(grads_batch_clients_mean_square)
-
+                temp_mean = torch.tensor([torch.mean(grads_batch_clients[client_idx][layer_idx])
+                                for layer_idx in range(len(grads_batch_clients[client_idx]))])
+                temp_mean_square = torch.tensor([torch.mean(grads_batch_clients[client_idx][layer_idx] ** 2)
+                                    for layer_idx in range(len(grads_batch_clients[client_idx]))])
+            #    grads_batch_clients_mean.append(temp_mean)
+            #    grads_batch_clients_mean_square.append(temp_mean_square)
+            grads_batch_clients_mean = [temp_mean for _ in range(size)]
+            grads_batch_clients_mean_square = [temp_mean_square for _ in range(size)]
+            dist.all_gather(grads_batch_clients_mean,temp_mean)
+            dist.all_gather(grads_batch_clients_mean_square,temp_mean_square)
+            grads_batch_clients_mean = torch.stack(grads_batch_clients_mean, dim=0).numpy()
+            grads_batch_clients_mean_square = torch.stack(grads_batch_clients_mean_square, dim=0).numpy()
+            grads_batch_clients=grads_batch_clients.numpy()
             layers_size = np.array([_.size for _ in grads_batch_clients[0]])
             clipping_thresholds = theta * (
                         np.sum(grads_batch_clients_mean_square * layers_size, 0) / (layers_size * num_clients)
