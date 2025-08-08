@@ -99,20 +99,20 @@ class Net(nn.Module):
                 nn.BatchNorm2d(384),
                 nn.ReLU())
             self.layer5 = nn.Sequential(
-                nn.Conv2d(384, 256, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm2d(256),
+                nn.Conv2d(384, 64, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(64),
                 nn.ReLU(),
                 nn.MaxPool2d(kernel_size = 3, stride = 2))
             self.fc = nn.Sequential(
                 nn.Dropout(0.5),
-                nn.Linear(9216, 4096),
+                nn.Linear(2304, 1024),
                 nn.ReLU())
             self.fc1 = nn.Sequential(
                 nn.Dropout(0.5),
-                nn.Linear(4096, 4096),
+                nn.Linear(1024, 1024),
                 nn.ReLU())
             self.fc2= nn.Sequential(
-                nn.Linear(4096, 10))
+                nn.Linear(1024, 10))
 
             self.mybuf=[]
             self.splitbuf=[]
