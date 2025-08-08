@@ -238,7 +238,7 @@ def unquantize_per_layer(party, r_maxs, bit_width=16):
     )
     return np.array(result)
 
-def basic_average_gradients_cq_ben(model,root):
+def basic_average_gradients_cq_ben_initial(model,root):
     """ Gradient averaging using Binomial Tree., Batch Crypt with c,q and ben """
 #    print("Using DFL")
     global totaltime, starttime, endtime
@@ -359,6 +359,126 @@ def basic_average_gradients_cq_ben(model,root):
     return bytes_sent,messages_sent        
 
 
+def basic_average_gradients_cq_ben(model,root):
+    """ Gradient averaging using Binomial Tree., Batch Crypt with aciq-quan """
+#    print("Using DFL")
+    global totaltime, starttime, endtime
+    size = dist.get_world_size()
+    rank = dist.get_rank()
+    with open('layout-up', newline='') as csvfile1:
+        btreedata1 = list(csv.reader(csvfile1))
+    with open('layout-down', newline='') as csvfile2:
+        btreedata2 = list(csv.reader(csvfile2))
+    bytes_sent=0
+    messages_sent=0
+    for param in model.parameters():
+#        if type(param) is torch.Tensor:
+            if param.dim() == 1:
+              continue
+            num_clients=size
+            grads_batch_clients=[param.grad.data.numpy()]
+            q_width=16
+
+            sizes = [item.size * num_clients for item in grads_batch_clients[0]]
+            max_values = []
+            min_values = []
+            for layer_idx in range(len(grads_batch_clients[0])):
+                max_values.append([np.max([item[layer_idx] for item in grads_batch_clients])])
+                min_values.append([np.min([item[layer_idx] for item in grads_batch_clients])])
+            max_values=torch.tensor(max_values)
+            min_values=torch.tensor(min_values)
+            dist.all_reduce(max_values, op=dist.ReduceOp.MAX)
+            dist.all_reduce(min_values, op=dist.ReduceOp.MIN)
+            grads_max_min = np.concatenate([max_values.numpy(),min_values.numpy()],axis=1)
+            clipping_thresholds = encryption.calculate_clip_threshold_aciq_g(grads_max_min, sizes, bit_width=q_width)
+            #print("clipping_thresholds", clipping_thresholds)
+
+
+            r_maxs = [x * num_clients for x in clipping_thresholds]
+
+            grads_batch_clients = [encryption.clip_with_threshold(item, clipping_thresholds)
+                                    for item in grads_batch_clients]
+
+            grads_batch_this = [quantize_per_layer(item, r_maxs, bit_width=q_width)
+                                    for item in grads_batch_clients][0]
+                                    
+            enc_grads_batch_clients = []
+            og_shape_batch_clients = []
+            batch_size=100
+            
+            for item in grads_batch_clients:
+                enc_grads_temp, og_shape_temp = batch_enc_per_layer(publickey=publickey, party=item,
+                                                                    r_maxs=r_maxs,
+                                                                    bit_width=q_width,
+                                                                    batch_size=batch_size)
+                enc_grads_batch_clients.append(enc_grads_temp)
+                og_shape_batch_clients.append(og_shape_temp)
+           
+            grads_batch_this = enc_grads_batch_clients[0]
+            
+            grads_batch_this_serialised=pickle.dumps(grads_batch_this)
+            tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
+            #model.mybuf=copy.deepcopy(tensor_to_send)
+            
+            #breakpoint()    
+            
+#            model.testbuf=torch.tensor(np.zeros(1))
+            #Tree Upward
+#           for i in range(int(math.log2(size))):
+#           for i in range(len(btreedata)):
+            endtime=time.time()
+            totaltime+=(endtime-starttime)
+            for currentrow in btreedata1:
+                         #logging.info(f"Rank,{rank},currentrow,{currentrow[0],currentrow[1]}")
+                         if int(currentrow[0]) == rank:
+                           dist.send(tensor=torch.tensor(len(tensor_to_send),dtype=torch.int64),dst=int(currentrow[1]))
+                           dist.send(tensor=tensor_to_send,dst=int(currentrow[1]))
+                           bytes_sent += len(tensor_to_send)
+                           messages_sent += 1
+                         elif int(currentrow[1]) == rank:
+                           temp_tensor=torch.tensor(0,dtype=torch.int64)
+                           dist.recv(tensor=temp_tensor,src=int(currentrow[0]))
+                           model.mybuf=torch.ByteTensor(temp_tensor.item())
+                           dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
+#                          param.grad.data+=model.mybuf
+                           received_bytes = bytes(model.mybuf.tolist())
+                           grads_batch_that=pickle.loads(received_bytes)
+                           #cipherz = pickle.loads(received_bytes)
+                           both_gradients=[]
+                           both_gradients.append(grads_batch_this)
+                           both_gradients.append(grads_batch_that)
+                           starttime=time.time()
+                           grads_batch_this = aggregate_gradients(both_gradients)
+                           endtime=time.time()
+                           totaltime+=(endtime-starttime)
+                           grads_batch_this_serialised=pickle.dumps(grads_batch_this)
+                           tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
+                         
+            if rank == root:
+                 starttime=time.time()
+                 grads_batch_temp = batch_dec_per_layer(privatekey=privatekey, party=grads_batch_this, og_shapes=og_shape_batch_clients[0],
+                                            r_maxs=r_maxs, bit_width=q_width, batch_size=batch_size)
+                 grads_batch_final=unquantize_per_layer(grads_batch_temp, r_maxs, bit_width=q_width)
+                 endtime=time.time()
+                 totaltime+=(endtime-starttime)
+                 param.grad.data = torch.from_numpy(grads_batch_final)    
+
+#Tree Downward
+            model.mybuf=copy.deepcopy(param.grad.data)
+            for currentrow in btreedata2:
+                        if int(currentrow[0]) == rank:
+                           dist.send(tensor=param.grad.data,dst=int(currentrow[1]))
+                           bytes_sent += param.grad.data.nelement() * param.grad.data.element_size()
+                           messages_sent += 1
+
+                        elif int(currentrow[1]) == rank:
+                           dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
+                           param.grad.data=model.mybuf
+#           dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM, group=0)
+            starttime=time.time()
+            param.grad.data /= size
+    return bytes_sent,messages_sent        
+
 def basic_average_gradients_cq(model,root):
     """ Gradient averaging using Binomial Tree., Batch Crypt with aciq-quan """
 #    print("Using DFL")
@@ -462,6 +582,7 @@ def basic_average_gradients_cq(model,root):
             starttime=time.time()
             param.grad.data /= size
     return bytes_sent,messages_sent        
+
 
 
 def run(rank, size, epochs, K, averager, runid, root):
