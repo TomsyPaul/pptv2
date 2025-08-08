@@ -294,6 +294,7 @@ def their_average_gradients(model):
                                bytes_sent += splitparam[j].nelement() * splitparam[j].element_size()
                                messages_sent += 1
                                rowindex += 1
+                           starttime = time.time()    
                          elif int(btreedata1[rowindex][1]) == rank:
                            endtime=time.time()
                            totaltime+=(endtime-starttime)
@@ -304,12 +305,14 @@ def their_average_gradients(model):
                            else:     
                                 model.mybuf+=model.splitbuf
                            rowindex += 1
+                           starttime = time.time()
                          else:
                            endtime=time.time()
                            totaltime+=(endtime-starttime)
-                           rowindex += 1       
+                           rowindex += 1
+                           starttime = time.time()
 #            dist.barrier()
-            starttime = time.time()
+            
             dist.all_reduce(model.mybuf, op=dist.reduce_op.SUM)
 #           all reduce makes each node send model parameters at least log2(n) times
 #            bytes_sent += math.log2(size) * model.mybuf.nelement() * splitparam[j].element_size()
