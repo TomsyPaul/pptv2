@@ -310,7 +310,7 @@ def their_average_gradients(model):
 #           all reduce makes each node send model parameters at least log2(n) times
 #            bytes_sent += math.log2(size) * model.mybuf.nelement() * splitparam[j].element_size()
 #            messages_sent += math.log2(size)
-            bytes_sent += size * model.mybuf.nelement() * splitparam[j].element_size()
+            bytes_sent += size * model.mybuf.nelement() * model.mybuf.element_size()
             messages_sent += size
 
             param.grad.data = model.mybuf
