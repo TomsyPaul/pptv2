@@ -324,11 +324,20 @@ def their_average_gradients(model):
 #   print("Rank = ", rank)
 def run(rank, size, epochs, K, averager, runid):
     """ Distributed Synchronous SGD Example """
+
+    path_to_file = 'shakespeare.txt'
+    text = open(path_to_file, 'rb').read().decode(encoding='utf-8')
+    vocab = sorted(set(text))
+    char2idx = {u: i for i, u in enumerate(vocab)}
+    idx2char = np.array(vocab)
+    text_as_int = np.array([char2idx[c] for c in text])
+
+
+
     global totaltime, starttime, endtime
     torch.manual_seed(1234)
     train_set, bsz = partition_dataset()
     model = Net()
-    model = model
 #    model = model.cuda(rank)
     optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.5)
 
