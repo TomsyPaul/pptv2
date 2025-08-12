@@ -20,12 +20,13 @@ totaltime=0
 starttime=0
 endtime=0
 
-
+device = "cpu"
 
 from math import ceil
 from random import Random
 from torch.autograd import Variable
 from torchvision import datasets, transforms
+from torch.utils.data import Dataset, DataLoader
 
 class Partition(object):
     """ Dataset-like object, but only access a subset of it. """
@@ -63,27 +64,21 @@ class DataPartitioner(object):
         return Partition(self.data, self.partitions[partition])
 
 
-class Net(nn.Module):
-    """ Network architecture. """
-    def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
-        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
-        self.conv2_drop = nn.Dropout2d()
-        self.fc1 = nn.Linear(320, 50)
-        self.fc2 = nn.Linear(50, 10)
+class RNN(nn.Module):
+    def __init__(self, input_size, output_size, hidden_size, num_layers):
+        super(RNN, self).__init__()
+        self.embedding = nn.Embedding(input_size, hidden_size)
+        self.rnn = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers)
+        self.decoder = nn.Linear(hidden_size, output_size)
         self.mybuf=[]
         self.splitbuf=[]
-#        self.secret=float(0)
         self.aux=dict(isleaf=False,partner=0,adder=False,key="1234567890")
-    def forward(self, x):
-        x = F.relu(F.max_pool2d(self.conv1(x), 2))
-        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
-        x = x.view(-1, 320)
-        x = F.relu(self.fc1(x))
-        x = F.dropout(x, training=self.training)
-        x = self.fc2(x)
-        return F.log_softmax(x, dim=1)
+    
+    def forward(self, input_seq, hidden_state):
+        embedding = self.embedding(input_seq)
+        output, hidden_state = self.rnn(embedding, hidden_state)
+        output = self.decoder(output)
+        return output, (hidden_state[0].detach(), hidden_state[1].detach())
 
 
 def partition_dataset():
@@ -319,6 +314,12 @@ def their_average_gradients(model):
             param.grad.data = model.mybuf
             param.grad.data /= size
     return bytes_sent,messages_sent
+
+def split_input_target(chunk):
+    input_text = chunk[:-1]
+    target_text = chunk[1:]
+    return input_text, target_text
+
 #def run(rank, size):
 #   """ Distributed function to be implemented later. """
 #   print("Rank = ", rank)
@@ -331,17 +332,38 @@ def run(rank, size, epochs, K, averager, runid):
     char2idx = {u: i for i, u in enumerate(vocab)}
     idx2char = np.array(vocab)
     text_as_int = np.array([char2idx[c] for c in text])
+    seq_length = 100
+    examples_per_epoch = len(text) // seq_length
+    char_dataset=torch.tensor(text_as_int)
+    
 
+    sequences = DataLoader(char_dataset, batch_size=seq_length+1, shuffle=False)
+    dataset_0=[split_input_target(i) for i in sequences]
 
+    # Batch size
+    BATCH_SIZE = 64
+    steps_per_epoch = examples_per_epoch // BATCH_SIZE
 
+    # Length of the vocabulary in chars
+    vocab_size = len(vocab)
+
+    # The embedding dimension
+    embedding_dim = 256
+
+    # Number of RNN units
+    rnn_units = 128
+    lr=0.001
+
+    data = torch.tensor(data).to(device)
+    data = torch.unsqueeze(data, dim=1)
+
+    model = RNN(input_size = vocab_size, output_size=vocab_size, hidden_size=rnn_units, num_layers=1)
+                
     global totaltime, starttime, endtime
-    torch.manual_seed(1234)
-    train_set, bsz = partition_dataset()
-    model = Net()
-#    model = model.cuda(rank)
-    optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.5)
+    
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    num_batches = ceil(len(train_set.dataset) / float(bsz))
 
     LOG_FILE = "/logs/"+str(size)+"-"+averager+"-"+str(epochs)+"-"+str(runid)
     logging.basicConfig(filename=LOG_FILE, format='%(asctime)s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d_%H-%M-%S')
