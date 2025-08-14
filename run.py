@@ -30,38 +30,35 @@ from torch.utils.data import Dataset, DataLoader
 
 class Partition(object):
     """ Dataset-like object, but only access a subset of it. """
-
-    def __init__(self, data, index):
+    def __init__(self, data, indices):
         self.data = data
-        self.index = index
-
+        self.index = indices
     def __len__(self):
-        return len(self.index)
-
+        return len(self.data)
     def __getitem__(self, index):
-        data_idx = self.index[index]
-        return self.data[data_idx]
+        #data_idx = self.index[index]
+        return self.data[index]
 
 
 class DataPartitioner(object):
     """ Partitions a dataset into different chuncks. """
-
     def __init__(self, data, sizes=[0.7, 0.2, 0.1], seed=1234):
         self.data = data
-        self.partitions = []
-        rng = Random()
-        rng.seed(seed)
+        #rng = Random()
+        #rng.seed(seed)
         data_len = len(data)
-        indexes = [x for x in range(0, data_len)]
-        rng.shuffle(indexes)
-
+        self.indexes = []
+        part_start=0
+        #rng.shuffle(indexes)
         for frac in sizes:
-            part_len = int(frac * data_len)
-            self.partitions.append(indexes[0:part_len])
-            indexes = indexes[part_len:]
-
+            part_size = int(frac * data_len)
+            self.indexes.append((part_start,part_size))
+            part_start += part_size
     def use(self, partition):
-        return Partition(self.data, self.partitions[partition])
+        start_index=self.indexes[partition][0]
+        partition_size=self.indexes[partition][1]
+        indices=[i for i in range(start_index,start_index+partition_size)]
+        return Partition(self.data, indices)
 
 
 class RNN(nn.Module):
@@ -82,25 +79,35 @@ class RNN(nn.Module):
 
 
 def partition_dataset():
-    """ Partitioning MNIST """
-    dataset = datasets.MNIST(
-        './data',
-        train=True,
-        download=True,
-        transform=transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307, ), (0.3081, ))
-        ]))
+    """ Partitioning Shakespeare """
+    data_path = 'shakespeare.txt'
+    data = open(data_path, 'r').read()
+    chars = sorted(list(set(data)))
+    data_size, vocab_size = len(data), len(chars)
+    # char to index and index to char maps
+    char_to_ix = { ch:i for i,ch in enumerate(chars) }
+    ix_to_char = { i:ch for i,ch in enumerate(chars) }
+    # convert data from chars to indices
+    data = list(data[0:550])
+    for i, ch in enumerate(data):
+        data[i] = char_to_ix[ch]
+    seq_length = 100
+    data_set=[]
+    for i in range((len(data)//seq_length)):
+        source=data[i*100:(i+1)*100]
+        target=data[i*100+1:(i+1)*100+1]
+        data_set+=[(source,target)]
+    # data tensor on device
+    data = torch.tensor(data_set).to(device)
+    #data = torch.unsqueeze(data_set, dim=1)
     size = dist.get_world_size()
-    bsz = 128 // size
-#    partition_sizes = [1.0 / size for _ in range(size)]
+    bsz = 64 // size
     with open('partition_sizes', newline='') as csvfile1:
         partition_sizes = list(csv.reader(csvfile1))
     partition_sizes=[float(partition_sizes[0][i]) for i in range(size)]    
-    partition = DataPartitioner(dataset, partition_sizes)
+    partition = DataPartitioner(data, partition_sizes)
     partition = partition.use(dist.get_rank())
-    train_set = torch.utils.data.DataLoader(
-        partition, batch_size=bsz, shuffle=True)
+    train_set = torch.utils.data.DataLoader(partition, batch_size=bsz, shuffle=True)
     return train_set, bsz
 
 def basic_average_gradients(model):
@@ -326,36 +333,36 @@ def split_input_target(chunk):
 def run(rank, size, epochs, K, averager, runid):
     """ Distributed Synchronous SGD Example """
 
+    
     path_to_file = 'shakespeare.txt'
     text = open(path_to_file, 'rb').read().decode(encoding='utf-8')
     vocab = sorted(set(text))
-    char2idx = {u: i for i, u in enumerate(vocab)}
-    idx2char = np.array(vocab)
-    text_as_int = np.array([char2idx[c] for c in text])
-    seq_length = 100
-    examples_per_epoch = len(text) // seq_length
-    char_dataset=torch.tensor(text_as_int)
+    # char2idx = {u: i for i, u in enumerate(vocab)}
+    # idx2char = np.array(vocab)
+    # text_as_int = np.array([char2idx[c] for c in text])
+    # seq_length = 100
+    # examples_per_epoch = len(text) // seq_length
+    # char_dataset=torch.tensor(text_as_int)
     
 
-    sequences = DataLoader(char_dataset, batch_size=seq_length+1, shuffle=False)
-    dataset_0=[split_input_target(i) for i in sequences]
+    #sequences = DataLoader(char_dataset, batch_size=seq_length+1, shuffle=False)
+    #dataset_0=[split_input_target(i) for i in sequences]
 
     # Batch size
     BATCH_SIZE = 64
-    steps_per_epoch = examples_per_epoch // BATCH_SIZE
+    #steps_per_epoch = examples_per_epoch // BATCH_SIZE
 
     # Length of the vocabulary in chars
     vocab_size = len(vocab)
 
     # The embedding dimension
-    embedding_dim = 256
+    #embedding_dim = 256
 
     # Number of RNN units
     rnn_units = 128
     lr=0.001
 
-    data = torch.tensor(data).to(device)
-    data = torch.unsqueeze(data, dim=1)
+    train_set, bsz = partition_dataset()
 
     model = RNN(input_size = vocab_size, output_size=vocab_size, hidden_size=rnn_units, num_layers=1)
                 
