@@ -1,5 +1,6 @@
 """run.py: adapted from https://pytorch.org/tutorials/intermediate/dist_tuto.html"""
 #!/usr/bin/env python
+import pickle
 import os
 import torch
 import torch.distributed as dist
@@ -22,10 +23,25 @@ endtime=0
 
 device = "cpu"
 
+from joblib import Parallel, delayed
+import multiprocessing
+
 from math import ceil
 from random import Random
 from torch.autograd import Variable
 from torchvision import datasets, transforms
+
+from functools import reduce
+
+from ftl.encryption import paillier, encryption
+
+N_JOBS = multiprocessing.cpu_count()
+
+publickey=paillier.PaillierPublicKey(27236700922646976555595848507913589494886491119135730116014077185311243444450372255376489388880173022641848729747213088746475118480344996406749938547224285029951417411158327330610634671230458266993515963753271442282969744291116368707834837036890519842176076657317424175485854349519237230877898852294685281803161775833139254050216610420167131637216465657783550454961204111753470621658424459969937833601118914414496472033175054121693273513687334787107976849759736841476647931918984474457173711208172669939800415050356154977238127550304510079658979903408556459392897794799075517038480041829170731623511642064703877042081)
+
+
+privatekey=paillier.PaillierPrivateKey(publickey,151731466574845229173039099025495922095008727037737139342593172671294559941585338353476978224816381692776568780654141379462769869960946855764863957672293447968060874024631012137102252157537274255768018381630660935684213060267736952413889789815316743297286676968944107787802792481731771876027538148701189447527,
+179505949144779488794639217468096838709557457111534772428337237788171867936597162601187903575540819127792895820899862337184627927909110508331699702369829930039159510893967892328575714125966954175352601542034250713387089395862180071677366675266103958356045025432474981187150877764707656153946356889833385368503)
 
 class Partition(object):
     """ Dataset-like object, but only access a subset of it. """
@@ -111,8 +127,89 @@ def partition_dataset():
     train_set = torch.utils.data.DataLoader(partition, batch_size=bsz, shuffle=True,drop_last=True)
     return train_set, bsz
 
-def basic_average_gradients(model):
-    """ Gradient averaging using Binomial Tree. """
+def do_sum(x1, x2):
+    results = []
+    for i in range(len(x1)):
+        results.append(x1[i] + x2[i])
+    return results
+
+
+def aggregate_gradients(gradient_list, weight=0.5):
+    # def multiply_by_weight(party, w):
+    #     for i in range(len(party)):
+    #         party[i] = w * party[i]
+    #     return party
+
+    # gradient_list = Parallel(n_jobs=2)(delayed(multiply_by_weight)(party, weight) for party in gradient_list)
+    results = reduce(do_sum, gradient_list)
+    return results
+
+
+def aggregate_losses(loss_list):
+    return np.sum(loss_list)
+
+
+def batch_enc_per_layer(publickey, party, r_maxs, bit_width=16, batch_size=100):
+    result = []
+    og_shapes = []
+
+    for layer, r_max in zip(party, r_maxs):
+        enc, shape_ = encryption.encrypt_matrix_batch(publickey, layer, batch_size=batch_size, bit_width=bit_width,
+                                                      r_max=r_max)
+        result.append(enc)
+        og_shapes.append(shape_)
+    return result, og_shapes
+
+
+def batch_dec_per_layer(privatekey, party, og_shapes, r_maxs, bit_width=16, batch_size=100):
+    result = []
+    for layer, r_max, og_shape in zip(party, r_maxs, og_shapes):
+        result.append(
+            encryption.decrypt_matrix_batch(privatekey, layer, og_shape, batch_size=batch_size, bit_width=bit_width,
+                                            r_max=r_max).astype(np.float32))
+    return result
+
+
+def quantize(party, bit_width=16, r_max=0.5):
+    result = []
+    for component in party:
+        x, _ = encryption.quantize_matrix(component, bit_width=bit_width, r_max=r_max)
+        result.append(x)
+    return np.array(result)
+
+
+def quantize_per_layer(party, r_maxs, bit_width=16):
+    # result = []
+    # for component, r_max in zip(party, r_maxs):
+    #     x, _ = encryption.quantize_matrix_stochastic(component, bit_width=bit_width, r_max=r_max)
+    #     result.append(x)
+    result = Parallel(n_jobs=N_JOBS)(
+        delayed(encryption.quantize_matrix_stochastic)(component, bit_width=bit_width, r_max=r_max) for component, r_max
+        in zip(party, r_maxs))
+    result = np.array(result)[:, 0]
+    return result
+
+
+def unquantize(party, bit_width=16, r_max=0.5):
+    result = []
+    for component in party:
+        result.append(encryption.unquantize_matrix(component, bit_width=bit_width, r_max=r_max).astype(np.float32))
+    return np.array(result)
+
+
+def unquantize_per_layer(party, r_maxs, bit_width=16):
+    # result = []
+    # for component, r_max in zip(party, r_maxs):
+    #     result.append(encryption.unquantize_matrix(component, bit_width=bit_width, r_max=r_max).astype(np.float32))
+    result = Parallel(n_jobs=N_JOBS)(
+        delayed(encryption.unquantize_matrix)(component, bit_width=bit_width, r_max=r_max) for component, r_max
+        in zip(party, r_maxs)
+    )
+    return np.array(result)
+
+
+def basic_average_gradients_cq_ben(model,root):
+    """ Gradient averaging using Binomial Tree., Batch Crypt with aciq-quan and enc """
 #    print("Using DFL")
     global totaltime, starttime, endtime
     size = dist.get_world_size()
@@ -125,7 +222,55 @@ def basic_average_gradients(model):
     messages_sent=0
     for param in model.parameters():
 #        if type(param) is torch.Tensor:
-            model.mybuf=copy.deepcopy(param.grad.data)
+            if param.dim() == 1:
+              continue
+            num_clients=size
+            grads_batch_clients=[param.grad.data.numpy()]
+            q_width=16
+
+            sizes = [item.size * num_clients for item in grads_batch_clients[0]]
+            max_values = []
+            min_values = []
+            for layer_idx in range(len(grads_batch_clients[0])):
+                max_values.append([np.max([item[layer_idx] for item in grads_batch_clients])])
+                min_values.append([np.min([item[layer_idx] for item in grads_batch_clients])])
+            max_values=torch.tensor(max_values)
+            min_values=torch.tensor(min_values)
+            dist.all_reduce(max_values, op=dist.ReduceOp.MAX)
+            dist.all_reduce(min_values, op=dist.ReduceOp.MIN)
+            grads_max_min = np.concatenate([max_values.numpy(),min_values.numpy()],axis=1)
+            clipping_thresholds = encryption.calculate_clip_threshold_aciq_g(grads_max_min, sizes, bit_width=q_width)
+            #print("clipping_thresholds", clipping_thresholds)
+
+
+            r_maxs = [x * num_clients for x in clipping_thresholds]
+
+            grads_batch_clients = [encryption.clip_with_threshold(item, clipping_thresholds)
+                                    for item in grads_batch_clients]
+
+            grads_batch_this = [quantize_per_layer(item, r_maxs, bit_width=q_width)
+                                    for item in grads_batch_clients][0]
+                                    
+            enc_grads_batch_clients = []
+            og_shape_batch_clients = []
+            batch_size=100
+            
+            for item in grads_batch_clients:
+                enc_grads_temp, og_shape_temp = batch_enc_per_layer(publickey=publickey, party=item,
+                                                                    r_maxs=r_maxs,
+                                                                    bit_width=q_width,
+                                                                    batch_size=batch_size)
+                enc_grads_batch_clients.append(enc_grads_temp)
+                og_shape_batch_clients.append(og_shape_temp)
+           
+            grads_batch_this = enc_grads_batch_clients[0]
+            
+            grads_batch_this_serialised=pickle.dumps(grads_batch_this)
+            tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
+            #model.mybuf=copy.deepcopy(tensor_to_send)
+            
+            #breakpoint()    
+            
 #            model.testbuf=torch.tensor(np.zeros(1))
             #Tree Upward
 #           for i in range(int(math.log2(size))):
@@ -133,16 +278,42 @@ def basic_average_gradients(model):
             endtime=time.time()
             totaltime+=(endtime-starttime)
             for currentrow in btreedata1:
+                         #logging.info(f"Rank,{rank},currentrow,{currentrow[0],currentrow[1]}")
                          if int(currentrow[0]) == rank:
-                           dist.send(tensor=param.grad.data,dst=int(currentrow[1]))
-                           bytes_sent += param.grad.data.nelement() * param.grad.data.element_size()
+                           dist.send(tensor=torch.tensor(len(tensor_to_send),dtype=torch.int64),dst=int(currentrow[1]))
+                           dist.send(tensor=tensor_to_send,dst=int(currentrow[1]))
+                           bytes_sent += len(tensor_to_send)
                            messages_sent += 1
                          elif int(currentrow[1]) == rank:
+                           temp_tensor=torch.tensor(0,dtype=torch.int64)
+                           dist.recv(tensor=temp_tensor,src=int(currentrow[0]))
+                           model.mybuf=torch.ByteTensor(temp_tensor.item())
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
-                           param.grad.data+=model.mybuf
+#                          param.grad.data+=model.mybuf
+                           received_bytes = bytes(model.mybuf.tolist())
+                           grads_batch_that=pickle.loads(received_bytes)
+                           #cipherz = pickle.loads(received_bytes)
+                           both_gradients=[]
+                           both_gradients.append(grads_batch_this)
+                           both_gradients.append(grads_batch_that)
+                           starttime=time.time()
+                           grads_batch_this = aggregate_gradients(both_gradients)
+                           endtime=time.time()
+                           totaltime+=(endtime-starttime)
+                           grads_batch_this_serialised=pickle.dumps(grads_batch_this)
+                           tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
+                         
+            if rank == root:
+                 starttime=time.time()
+                 grads_batch_temp = batch_dec_per_layer(privatekey=privatekey, party=grads_batch_this, og_shapes=og_shape_batch_clients[0],
+                                            r_maxs=r_maxs, bit_width=q_width, batch_size=batch_size)
+                 grads_batch_final=unquantize_per_layer(grads_batch_temp, r_maxs, bit_width=q_width)
+                 endtime=time.time()
+                 totaltime+=(endtime-starttime)
+                 param.grad.data = torch.from_numpy(grads_batch_final)    
 
 #Tree Downward
-
+            model.mybuf=copy.deepcopy(param.grad.data)
             for currentrow in btreedata2:
                         if int(currentrow[0]) == rank:
                            dist.send(tensor=param.grad.data,dst=int(currentrow[1]))
@@ -157,39 +328,8 @@ def basic_average_gradients(model):
             param.grad.data /= size
     return bytes_sent,messages_sent        
 
-nextadjustment=None
-
-def getnextadjustment(key):
-    newstring=key
-    while True:
-        newstring=str(int(sha256(newstring.encode('utf-8')).hexdigest(),16))
-        strlength=len(newstring)
-        for i in range(strlength-4):
-#           yield newstring[i:i+4]
-#            yield '0.'+newstring[i:i+4]
-            yield '0.'+newstring[i:i+4]
-        newstring=newstring[strlength-4:strlength]
-          
-
-    
-def set_leaf_pair_adder(rank, size, model):
-    with open('layout-up', newline='') as csvfile1:
-        btreedata1 = list(csv.reader(csvfile1))
-    edge_dest=[currentrow[1] for currentrow in btreedata1]
-    if str(rank) not in edge_dest:
-        model.aux["isleaf"]=True
-        if rank % 4 == 0:           
-           model.aux["adder"]=True
-           model.aux["partner"] = rank + 2
-        else:
-           model.aux["adder"]=False   
-           model.aux["partner"] = rank - 2        
-    else:
-        model.aux["isleaf"]=False    
-            
-
-def my_average_gradients(model):
-    """ Gradient averaging using Binomial Tree with SS """
+def basic_average_gradients_cq(model,root):
+    """ Gradient averaging using Binomial Tree., Batch Crypt with aciq-quan """
 #    print("Using DFL")
     global totaltime, starttime, endtime
     size = dist.get_world_size()
@@ -200,129 +340,99 @@ def my_average_gradients(model):
         btreedata2 = list(csv.reader(csvfile2))
     bytes_sent=0
     messages_sent=0
-    
-    global nextadjustment
-        
     for param in model.parameters():
 #        if type(param) is torch.Tensor:
-            model.mybuf=copy.deepcopy(param.grad.data)
+            if param.dim() == 1:
+              continue
+            num_clients=size
+            grads_batch_clients=[param.grad.data.numpy()]
+            q_width=16
+
+            sizes = [item.size * num_clients for item in grads_batch_clients[0]]
+            max_values = []
+            min_values = []
+            for layer_idx in range(len(grads_batch_clients[0])):
+                max_values.append([np.max([item[layer_idx] for item in grads_batch_clients])])
+                min_values.append([np.min([item[layer_idx] for item in grads_batch_clients])])
+            max_values=torch.tensor(max_values)
+            min_values=torch.tensor(min_values)
+            dist.all_reduce(max_values, op=dist.ReduceOp.MAX)
+            dist.all_reduce(min_values, op=dist.ReduceOp.MIN)
+            grads_max_min = np.concatenate([max_values.numpy(),min_values.numpy()],axis=1)
+            clipping_thresholds = encryption.calculate_clip_threshold_aciq_g(grads_max_min, sizes, bit_width=q_width)
+            #print("clipping_thresholds", clipping_thresholds)
+
+
+            r_maxs = [x * num_clients for x in clipping_thresholds]
+
+            grads_batch_clients = [encryption.clip_with_threshold(item, clipping_thresholds)
+                                    for item in grads_batch_clients]
+
+            grads_batch_this = [quantize_per_layer(item, r_maxs, bit_width=q_width)
+                                    for item in grads_batch_clients][0]
+            
+            grads_batch_this_serialised=pickle.dumps(grads_batch_this)
+            tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
+            #model.mybuf=copy.deepcopy(tensor_to_send)
+            
+            #breakpoint()    
+            
 #            model.testbuf=torch.tensor(np.zeros(1))
-#            additive = model.secret
-            additive = 0.0
-            if model.aux["isleaf"] == True:
-                if model.aux["adder"] == True:
-                    additive += float(next(nextadjustment))
-                else:
-                    additive -= float(next(nextadjustment))
-            param.grad.data += additive
             endtime=time.time()
             totaltime+=(endtime-starttime)
-#Tree Upward
+            #Tree Upward
 #           for i in range(int(math.log2(size))):
 #           for i in range(len(btreedata)):
+            endtime=time.time()
+            totaltime+=(endtime-starttime)
             for currentrow in btreedata1:
+                         #logging.info(f"Rank,{rank},currentrow,{currentrow[0],currentrow[1]}")
                          if int(currentrow[0]) == rank:
-                           dist.send(tensor=param.grad.data,dst=int(currentrow[1]))
-                           bytes_sent += param.grad.data.nelement() * param.grad.data.element_size()
+                           dist.send(tensor=torch.tensor(len(tensor_to_send),dtype=torch.int64),dst=int(currentrow[1]))
+                           dist.send(tensor=tensor_to_send,dst=int(currentrow[1]))
+                           bytes_sent += len(tensor_to_send)
                            messages_sent += 1
-                           
                          elif int(currentrow[1]) == rank:
+                           temp_tensor=torch.tensor(0,dtype=torch.int64)
+                           dist.recv(tensor=temp_tensor,src=int(currentrow[0]))
+                           model.mybuf=torch.ByteTensor(temp_tensor.item())
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
-                           param.grad.data+=model.mybuf
+#                          param.grad.data+=model.mybuf
+                           received_bytes = bytes(model.mybuf.tolist())
+                           grads_batch_that=pickle.loads(received_bytes)
+                           #cipherz = pickle.loads(received_bytes)
+                           both_gradients=[]
+                           both_gradients.append(grads_batch_this)
+                           both_gradients.append(grads_batch_that)
+                           starttime=time.time()
+                           grads_batch_this = aggregate_gradients(both_gradients)
+                           endtime=time.time()
+                           totaltime+=(endtime-starttime)
+                           grads_batch_this_serialised=pickle.dumps(grads_batch_this)
+                           tensor_to_send = torch.ByteTensor(list(grads_batch_this_serialised))
+                         
+            if rank == root:
+                 starttime=time.time()
+                 grads_batch_final=unquantize_per_layer(grads_batch_this, r_maxs, bit_width=q_width)
+                 endtime=time.time()
+                 totaltime+=(endtime-starttime)
+                 param.grad.data = torch.from_numpy(grads_batch_final)    
 
 #Tree Downward
-
+            model.mybuf=copy.deepcopy(param.grad.data)
             for currentrow in btreedata2:
                         if int(currentrow[0]) == rank:
                            dist.send(tensor=param.grad.data,dst=int(currentrow[1]))
                            bytes_sent += param.grad.data.nelement() * param.grad.data.element_size()
                            messages_sent += 1
+
                         elif int(currentrow[1]) == rank:
                            dist.recv(tensor=model.mybuf,src=int(currentrow[0]))
                            param.grad.data=model.mybuf
 #           dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM, group=0)
             starttime=time.time()
             param.grad.data /= size
-    return bytes_sent,messages_sent
-def Add_SS(v, n, seed):
-    vlist = []
-    rnd=Random()
-    rnd.seed(seed)
-    r=[]
-    for i in range(n):
-        r += [rnd.random()]
-    vstar = v/n
-    for i in range(n-1):
-        vlist += [vstar + r[i] - r[i+1]]
-    vlist += [vstar + r[n-1] - r[0]]
-    return vlist    
-
-def their_average_gradients(model):
-    """ Gradient averaging using modified LiPFed """
-    global totaltime, starttime, endtime
-    size = dist.get_world_size()
-    rank = dist.get_rank()
-    with open('layout', newline='') as csvfile1:
-        btreedata1 = list(csv.reader(csvfile1))
-    seedvalue=100
-    bytes_sent=0
-    messages_sent=0
-    for param in model.parameters():
-            first_receiving = True
-            model.mybuf=copy.deepcopy(param.grad.data)
-            model.splitbuf=copy.deepcopy(param.grad.data)
-
-            #Split and Send
-
-            edge_source=[currentrow[0] for  currentrow in btreedata1]
-
-            #splits give the number of edges of a node - the number of splits of parameters, split[i]=edges connected to i
-            splits=[edge_source.count(str(i)) for i in range(size)]
-            
-            #Send splits.. also receive :-)  Here was a bug when there were two for loops in place of the while..
-            rowindex=0
-            while rowindex < len(btreedata1):
-                         if int(btreedata1[rowindex][0]) == rank:
-                           number_of_splits=splits[rank]
-                           splitparam=Add_SS(param.grad.data, number_of_splits, seedvalue)
-                           endtime=time.time()
-                           totaltime+=(endtime-starttime)
-                           for j in range(number_of_splits):
-                               targetnode=int(btreedata1[rowindex][1])
-                               dist.send(tensor=splitparam[j],dst=targetnode)
-                               bytes_sent += splitparam[j].nelement() * splitparam[j].element_size()
-                               messages_sent += 1
-                               rowindex += 1
-                           starttime = time.time()    
-                         elif int(btreedata1[rowindex][1]) == rank:
-                           endtime=time.time()
-                           totaltime+=(endtime-starttime)
-                           dist.recv(tensor=model.splitbuf,src=int(btreedata1[rowindex][0]))
-                           if first_receiving == True:
-                                model.mybuf=copy.deepcopy(model.splitbuf)
-                                first_receiving = False
-                           else:     
-                                model.mybuf+=model.splitbuf
-                           rowindex += 1
-                           starttime = time.time()
-                         else:
-                           endtime=time.time()
-                           totaltime+=(endtime-starttime)
-                           rowindex += 1
-                           starttime = time.time()
-#            dist.barrier()
-            
-            dist.all_reduce(model.mybuf, op=dist.reduce_op.SUM)
-#           all reduce makes each node send model parameters at least log2(n) times
-#            bytes_sent += math.log2(size) * model.mybuf.nelement() * splitparam[j].element_size()
-#            messages_sent += math.log2(size)
-            bytes_sent += size * model.mybuf.nelement() * model.mybuf.element_size()
-            messages_sent += size
-
-            param.grad.data = model.mybuf
-            param.grad.data /= size
-    return bytes_sent,messages_sent
-
+    return bytes_sent,messages_sent        
 
 def split_input_target(chunk):
     input_text = chunk[:-1]
@@ -330,10 +440,7 @@ def split_input_target(chunk):
     return input_text, target_text
 
 
-#def run(rank, size):
-#   """ Distributed function to be implemented later. """
-#   print("Rank = ", rank)
-def run(rank, size, epochs, K, averager, runid):
+def run(rank, size, epochs, K, averager, runid, root):
     """ Distributed Synchronous SGD Example """
     global totaltime, starttime, endtime
     torch.manual_seed(1234)
@@ -358,20 +465,9 @@ def run(rank, size, epochs, K, averager, runid):
     LOG_FILE = "/logs/"+str(size)+"-"+averager+"-"+str(epochs)+"-"+str(runid)
     logging.basicConfig(filename=LOG_FILE, format='%(asctime)s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d_%H-%M-%S')
     starttime = time.time()
+    runstarttime=time.time()
     
     global nextadjustment,device
-    
-    if averager == "DFLMSS":
-        set_leaf_pair_adder(rank, size, model)
-#        with open('secrets', newline='') as csvfile3:
-#            thesecrets = list(csv.reader(csvfile3))
-#            model.secret=float(thesecrets[rank][0])
-        if model.aux["isleaf"] == True:
-            with open('keys', newline='') as csvfile4:
-                allkeys = list(csv.reader(csvfile4))
-                model.aux["key"]=allkeys[rank//4][0]
-            nextadjustment = getnextadjustment(model.aux["key"])
-            
     runstarttime=time.time()
     total_bytes=0
     total_messgaes=0
@@ -393,18 +489,14 @@ def run(rank, size, epochs, K, averager, runid):
             loss.backward()
             skip += 1
             if (skip % K) == 0:
-               if averager == "DFLBASIC":
-                  bytes_sent,messages_sent=basic_average_gradients(model)
+               if averager == "DFLBASICCQ":
+                  bytes_sent,messages_sent=basic_average_gradients_cq(model,root)
                   total_bytes += bytes_sent
                   total_messgaes += messages_sent
-               elif averager == "DFLMSS":
-                  bytes_sent,messages_sent=my_average_gradients(model)                  
+               elif averager == "DFLBASICCQBEN":
+                  bytes_sent,messages_sent=basic_average_gradients_cq_ben(model,root)                  
                   total_bytes += bytes_sent
-                  total_messgaes += messages_sent
-               elif averager == "DFLTSS":
-                  bytes_sent,messages_sent=their_average_gradients(model)
-                  total_bytes += bytes_sent
-                  total_messgaes += messages_sent
+                  total_messgaes += messages_sent               
             optimizer.step()
         print('Rank ',
             dist.get_rank(), ', epoch ', epoch, ': ',
@@ -419,10 +511,10 @@ def run(rank, size, epochs, K, averager, runid):
 
 
 
-def init_processes(rank, size, epochs, K, averager, runid, fn, backend='gloo'):
+def init_processes(rank, size, epochs, K, averager, runid, root, fn, backend='gloo'):
    """ Initialize the distributed environment. """
    dist.init_process_group(backend, rank=rank, world_size=size)
-   fn(rank, size, epochs, K, averager, runid)
+   fn(rank, size, epochs, K, averager, runid, root)
 
 if __name__ == "__main__":
 #    rank=int(os.environ['LOCAL_RANK'])
@@ -438,6 +530,7 @@ if __name__ == "__main__":
     parser.add_argument("--averager", type=str)
     parser.add_argument("--K", type=int)
     parser.add_argument("--runid", type=str)
+    parser.add_argument("--root", type=int)
     args = parser.parse_args()
     rank = int(args.rank)
     size = int(args.size)
@@ -445,4 +538,5 @@ if __name__ == "__main__":
     averager = args.averager
     K = int(args.K)
     runid = args.runid
-    init_processes(rank, size, epochs, K, averager, runid, run)
+    root = int(args.root)
+    init_processes(rank, size, epochs, K, averager, runid, root, run)
