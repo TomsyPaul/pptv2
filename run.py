@@ -20,7 +20,7 @@ totaltime=0
 starttime=0
 endtime=0
 
-
+device = "cpu"
 
 from math import ceil
 from random import Random
@@ -106,7 +106,7 @@ def partition_dataset():
     with open('partition_sizes', newline='') as csvfile1:
         partition_sizes = list(csv.reader(csvfile1))
     partition_sizes=[float(partition_sizes[0][i]) for i in range(size)]    
-    partition = DataPartitioner(dataset, partition_sizes)
+    partition = DataPartitioner(data_set, partition_sizes)
     partition = partition.use(dist.get_rank())
     train_set = torch.utils.data.DataLoader(partition, batch_size=bsz, shuffle=True,drop_last=True)
     return train_set, bsz

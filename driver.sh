@@ -102,5 +102,5 @@ do
 grep "epoch,$i" results/$worldsize-$averager-$epochs-$runid | cut -d"," -f5 | awk '{ sum += $1; n++ } END { if (n > 0) print "'$i' = " sum / n ; }' >> results/summary
 done
 echo "" >> "results/summary"
-bash close-all-terminals.sh
+#bash close-all-terminals.sh
 fi
