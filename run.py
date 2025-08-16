@@ -63,39 +63,43 @@ class DataPartitioner(object):
         return Partition(self.data, self.partitions[partition])
 
 
-class Net(nn.Module):
-    """ Network architecture. """
-    def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
-        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
-        self.conv2_drop = nn.Dropout2d()
-        self.fc1 = nn.Linear(320, 50)
-        self.fc2 = nn.Linear(50, 10)
+class RNN(nn.Module):
+    def __init__(self, input_size, output_size, hidden_size, num_layers):
+        super(RNN, self).__init__()
+        self.embedding = nn.Embedding(input_size, input_size)
+        self.rnn = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers)
+        self.decoder = nn.Linear(hidden_size, output_size)
         self.mybuf=[]
         self.splitbuf=[]
-#        self.secret=float(0)
         self.aux=dict(isleaf=False,partner=0,adder=False,key="1234567890")
-    def forward(self, x):
-        x = F.relu(F.max_pool2d(self.conv1(x), 2))
-        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
-        x = x.view(-1, 320)
-        x = F.relu(self.fc1(x))
-        x = F.dropout(x, training=self.training)
-        x = self.fc2(x)
-        return F.log_softmax(x, dim=1)
+    
+    def forward(self, input_seq, hidden_state):
+        embedding = self.embedding(input_seq)
+        output, hidden_state = self.rnn(embedding, hidden_state)
+        output = self.decoder(output)
+        return output, (hidden_state[0].detach(), hidden_state[1].detach())
 
 
 def partition_dataset():
-    """ Partitioning MNIST """
-    dataset = datasets.MNIST(
-        './data',
-        train=True,
-        download=True,
-        transform=transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307, ), (0.3081, ))
-        ]))
+    """ Partitioning Shakespeare """
+    data_path = 'shakespeare.txt'
+    data = open(data_path, 'r').read()
+    chars = sorted(list(set(data)))
+    data_size, vocab_size = len(data), len(chars)
+    # char to index and index to char maps
+    char_to_ix = { ch:i for i,ch in enumerate(chars) }
+    ix_to_char = { i:ch for i,ch in enumerate(chars) }
+    # convert data from chars to indices
+    data = list(data)
+    for i, ch in enumerate(data):
+        data[i] = char_to_ix[ch]
+    seq_length = 101
+    data_set=[]
+    
+    for i in range((len(data)//seq_length)):
+        source=data[i*seq_length:(i+1)*seq_length]
+        data_set+=[source]
+        
     size = dist.get_world_size()
     bsz = 128 // size
 #    partition_sizes = [1.0 / size for _ in range(size)]
@@ -104,8 +108,7 @@ def partition_dataset():
     partition_sizes=[float(partition_sizes[0][i]) for i in range(size)]    
     partition = DataPartitioner(dataset, partition_sizes)
     partition = partition.use(dist.get_rank())
-    train_set = torch.utils.data.DataLoader(
-        partition, batch_size=bsz, shuffle=True)
+    train_set = torch.utils.data.DataLoader(partition, batch_size=bsz, shuffle=True,drop_last=True)
     return train_set, bsz
 
 def basic_average_gradients(model):
@@ -319,6 +322,14 @@ def their_average_gradients(model):
             param.grad.data = model.mybuf
             param.grad.data /= size
     return bytes_sent,messages_sent
+
+
+def split_input_target(chunk):
+    input_text = chunk[:-1]
+    target_text = chunk[1:]
+    return input_text, target_text
+
+
 #def run(rank, size):
 #   """ Distributed function to be implemented later. """
 #   print("Rank = ", rank)
@@ -326,11 +337,21 @@ def run(rank, size, epochs, K, averager, runid):
     """ Distributed Synchronous SGD Example """
     global totaltime, starttime, endtime
     torch.manual_seed(1234)
+    seq_length=101
+    BATCH_SIZE = 128//dist.get_world_size()
+    path_to_file = 'shakespeare.txt'
+    text = open(path_to_file, 'rb').read().decode(encoding='utf-8')
+    vocab = sorted(set(text))
+    vocab_size = len(vocab)
+    embedding_dim = 256
+    rnn_units = 128
+    lr=0.001
+
     train_set, bsz = partition_dataset()
-    model = Net()
-    model = model
-#    model = model.cuda(rank)
-    optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.5)
+    model = RNN(input_size = vocab_size, output_size=seq_length-1, hidden_size=rnn_units, num_layers=3)
+
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     num_batches = ceil(len(train_set.dataset) / float(bsz))
 
@@ -338,7 +359,7 @@ def run(rank, size, epochs, K, averager, runid):
     logging.basicConfig(filename=LOG_FILE, format='%(asctime)s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d_%H-%M-%S')
     starttime = time.time()
     
-    global nextadjustment
+    global nextadjustment,device
     
     if averager == "DFLMSS":
         set_leaf_pair_adder(rank, size, model)
@@ -358,12 +379,16 @@ def run(rank, size, epochs, K, averager, runid):
     for epoch in range(epochs):
         epoch_loss = 0.0
         skip=0
-        for data, target in train_set:
-            data, target = Variable(data), Variable(target)
-#            data, target = Variable(data.cuda(rank)), Variable(target.cuda(rank))
+        hidden_state = None
+        for each_sequence in train_set:
+            input_seq, target_seq =  split_input_target(each_sequence)
+            input_batches=[[input_seq[i][j] for i in range(seq_length-1)] for j in range(bsz)]
+            target_batches=[[target_seq[i][j] for i in range(seq_length-1)] for j in range(bsz)]
+            input_seq = torch.tensor(input_batches).to(device)
+            target_seq = torch.tensor(target_batches).to(device)
+            output_seq, hidden_state = model(input_seq, hidden_state)
+            loss = loss_fn(torch.squeeze(output_seq), torch.squeeze(target_seq))
             optimizer.zero_grad()
-            output = model(data)
-            loss = F.nll_loss(output, target)
             epoch_loss += loss
             loss.backward()
             skip += 1

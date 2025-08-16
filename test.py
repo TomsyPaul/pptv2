@@ -47,11 +47,11 @@ class DataPartitioner(object):
     def __init__(self, data, sizes=[0.7, 0.2, 0.1], seed=1234):
         self.data = data
         self.partitions = []
-        #rng = Random()
-        #rng.seed(seed)
+        rng = Random()
+        rng.seed(seed)
         data_len = len(data)
         indexes = [x for x in range(0, data_len)]
-        #rng.shuffle(indexes)
+        rng.shuffle(indexes)
 
         for frac in sizes:
             part_len = int(frac * data_len)
@@ -104,14 +104,14 @@ def partition_dataset():
     size = 4
     rank = 1
 #    bsz = 64 // size
-    bsz=128
+    bsz=4
     #breakpoint()
     with open('partition_sizes', newline='') as csvfile1:
         partition_sizes = list(csv.reader(csvfile1))
     partition_sizes=[float(partition_sizes[0][i]) for i in range(size)]    
     partition = DataPartitioner(data_set, partition_sizes)
     partition = partition.use(rank)
-    train_set = torch.utils.data.DataLoader(partition, batch_size=bsz, shuffle=False,drop_last=True)
+    train_set = torch.utils.data.DataLoader(partition, batch_size=bsz, shuffle=True,drop_last=True)
     return train_set, bsz
 
 
@@ -132,7 +132,7 @@ def run(rank, size, epochs, K, averager, runid):
     vocab = sorted(set(text))
    
     # Batch size
-    BATCH_SIZE = 128
+    BATCH_SIZE = 4
     #steps_per_epoch = examples_per_epoch // BATCH_SIZE
 
     # Length of the vocabulary in chars
@@ -228,4 +228,4 @@ def run(rank, size, epochs, K, averager, runid):
 
 
 if __name__ == "__main__":
-   run(1,4,10,2,"DFLMSS",1234)
+   run(1,4,3,2,"DFLMSS",1234)
