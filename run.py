@@ -378,8 +378,6 @@ def basic_average_gradients_cq(model,root):
             #breakpoint()    
             
 #            model.testbuf=torch.tensor(np.zeros(1))
-            endtime=time.time()
-            totaltime+=(endtime-starttime)
             #Tree Upward
 #           for i in range(int(math.log2(size))):
 #           for i in range(len(btreedata)):
