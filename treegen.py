@@ -36,19 +36,19 @@ def generate_tree(n,i):
            else:
              l.remove((k+i-3,k+i-1))
              l.remove((k+i-2,k+i-1))
-#             l+=[(k+i-3,k+i)]
-#             l+=[(k+i,k+i-1)]
-             l+=[(k+i-3,k+i+2)]
-             l+=[(k+i+2,k+i-1)]
-
-
-             l+=[(k+i-2,k+i)]
-             l+=[(k+i,k+i+1)]
-             l+=[(k+i+1,k+i-1)]
-             
-#             l+=[(k+i-2,k+i+1)]
-#             l+=[(k+i+1,k+i+2)]
+             l+=[(k+i-3,k+i)]
+             l+=[(k+i,k+i-1)]
+#             l+=[(k+i-3,k+i+2)]
 #             l+=[(k+i+2,k+i-1)]
+
+
+#             l+=[(k+i-2,k+i)]
+#             l+=[(k+i,k+i+1)]
+#             l+=[(k+i+1,k+i-1)]
+             
+             l+=[(k+i-2,k+i+1)]
+             l+=[(k+i+1,k+i+2)]
+             l+=[(k+i+2,k+i-1)]
            return (r,l)
         else:
            r1,l1=generate_tree(k,i)   
