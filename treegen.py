@@ -1,90 +1,168 @@
-#import networkx as nx 
+import random
+import numpy as np
+#import networkx as nx
 #import matplotlib.pyplot as plt
-import argparse
+import copy
+import math
+import datetime
+#import sys
 
-def largest_power_le(n):
-    k=0
-    while(n>=pow(2,k)):
-       k+=1
-    return pow(2,k-1)
-     
-def generate_tree(n,i):
-  if(n<=3):
-    print("Error, n<=3")
-    return (0,[])
-  else:
-    k=largest_power_le(n)
-    if(k==n):
-         if(n==4):
-           return (i+3,[(i,i+1),(i+1,i+3),(i+2,i+3)])
-         else:
-           r1,l1=generate_tree(n//2,i)
-           r2,l2=generate_tree(n//2,i+n//2)
-           return (n+i-1,l1+l2+[(n//2+i-1,i+n-1)])
-    else:
-        if(n-k<4):
-           r,l=generate_tree(k,i)
-           if(n-k == 1):
-             l.remove((k+i-2,k+i-1))
-             l+=[(k+i-2,k+i)]
-             l+=[(k+i,k+i-1)]
-           elif(n-k == 2):
-             l.remove((k+i-2,k+i-1))
-             l+=[(k+i-2,k+i)]
-             l+=[(k+i,k+i+1)]
-             l+=[(k+i+1,k+i-1)]
-           else:
-             l.remove((k+i-3,k+i-1))
-             l.remove((k+i-2,k+i-1))
-             l+=[(k+i-3,k+i)]
-             l+=[(k+i,k+i-1)]
-#             l+=[(k+i-3,k+i+2)]
-#             l+=[(k+i+2,k+i-1)]
+def vertex(i):
+  return chr(ord('A')+i)
 
+def index(vertex):
+  return ord(vertex)-ord('A')
+#n=8
 
-#             l+=[(k+i-2,k+i)]
-#             l+=[(k+i,k+i+1)]
-#             l+=[(k+i+1,k+i-1)]
-             
-             l+=[(k+i-2,k+i+1)]
-             l+=[(k+i+1,k+i+2)]
-             l+=[(k+i+2,k+i-1)]
-           return (r,l)
-        else:
-           r1,l1=generate_tree(k,i)   
-           r2,l2=generate_tree(n-k,k+i)
-           return r1,l1+l2+[(r2,r1)]  
+edges_dict={
+'AB':9,
+'AC':3,
+'AE':4,
+'AJ':3,
+'BC':9,
+'BF':8,
+'BK':4,
+'CD':2,
+'CE':4,
+'CF':9,
+'CM':4,
+'DE':2,
+'DF':8,
+'DG':9,
+'DO':5,
+'DP':4,
+'EG':4,
+'EN':3,
+'FG':7,
+'FH':9,
+'FO':5,
+'GH':5,
+'GP':5,
+'IJ':9,
+'IK':3,
+'IM':4,
+'JK':9,
+'JN':8,
+'KL':2,
+'KM':4,
+'KN':9,
+'LM':2,
+'LN':8,
+'LO':9,
+'MO':4,
+'NO':7,
+'NP':9,
+'OP':5
+}
+vertex_list=[]
+for f in edges_dict:
+  vertex_list += f[0]
+  vertex_list += f[1]
+n=len(set(vertex_list))  
+#print(edges_dict)
+#G = nx.Graph()
+#G.add_weighted_edges_from(edges)
+#edge_labels = nx.get_edge_attributes(G, "weight")
+#nx.draw_networkx_edge_labels(G,edge_labels)
+#plt.show()
 
+start_time=datetime.datetime.now()
+
+treelists=[[{} for k in range(int(math.log2(n))+1)] for j in range(n)]
+
+for i in range(n):
+   #treelists[i][0]=[{} for j in range(n)]
+    treelists[i][0]['']=0
+    # print(treelists[i][0])     
+for j in range(int(math.log2(n))):
+  print("j=",j)
+  for i in range(n):
+  #treelists[i][0]=[{} for j in range(n)]
+    for current_tree in treelists[i][j-1]:
+      #print(treelists[i][j-1][current_tree])
+      current_tree_cost=treelists[i][j-1][current_tree]
+      #print(current_tree_cost)
+      for e in edges_dict:
+        if e[0] == vertex(i) or e[1] == vertex(i):
+          other_vertex= e[1] if e[0] == vertex(i) else e[0]
+          edge_cost=edges_dict[e]
+          middle_edge = (vertex(i)+other_vertex)
+          other_vertex_index=index(other_vertex)
+          #print(other_vertex,other_vertex_index,edge_cost,middle_edge)
+          for other_tree in treelists[other_vertex_index][j-1]:
+            #ignore the tree if any vertex is part of current tree
+            if set(current_tree).intersection(set(other_tree)):
+              continue  
+            #breakpoint()
+            other_tree_cost=treelists[other_vertex_index][j-1][other_tree]
+            newtree=str(current_tree)+middle_edge+other_tree
+            newtree_cost=max(current_tree_cost,other_tree_cost)+edge_cost
+            print(newtree,newtree_cost)
+            treelists[i][j][newtree]=newtree_cost
+
+j=int(math.log2(n))
+trees=[[] for i in range(n)]
+costs=[[] for i in range(n)]
+sorted_cost_indices=[[] for i in range(n)]
+sorted_trees=[[] for i in range(n)]
+#convert to list and sort the trees 
+for i in range(n):
+  trees[i]=list(treelists[i][j-1].keys())
+  costs[i]=list(treelists[i][j-1].values())
+  sorted_cost_indices[i]=np.argsort(costs[i])
+  sorted_trees[i]={trees[i][k]:costs[i][k] for k in sorted_cost_indices[i]}
+  print(sorted_trees[i])
+#raise SystemExit
+print("j=",j)
+global_minimum_cost=100000000
+for i in range(n):
+  costs_set=set({})
+  for current_tree in sorted_trees[i]:
+    current_tree_cost=sorted_trees[i][current_tree]
+    if current_tree_cost > global_minimum_cost:
+      continue
+    for e in edges_dict:
+      if e[0] == vertex(i) or e[1] == vertex(i):
+        other_vertex= e[1] if e[0] == vertex(i) else e[0]
+        edge_cost=edges_dict[e]
+        middle_edge = (vertex(i)+other_vertex)
+        other_vertex_index=index(other_vertex)
+        lasttree_cost=1000000
+        
+        for other_tree in sorted_trees[other_vertex_index]:
+          #ignore the tree if any vertex is part of current tree
+          if set(current_tree).intersection(set(other_tree)):
+            continue  
+
+          other_tree_cost=sorted_trees[other_vertex_index][other_tree]
+         
+          if lasttree_cost < other_tree_cost:
+            continue
           
-if __name__ == "__main__":
-#     n=input("Enter n")
-     parser = argparse.ArgumentParser()
-     parser.add_argument("--n", type=int)
-     args = parser.parse_args()
-     n = int(args.n)
-     
-     r,t=generate_tree(int(n),0)
-#     print(r,t)
-     l=[]
-     t1=[]
-     f1 = open("layout-up", "w")
-     f2 = open("layout-down", "w")
-     f3 = open("layout", "w")
-#     print("n=",n)
-     for edge in t:
-#        print(edge[0],",",edge[1],sep="",end=" ")
-        f1.write(str(edge[0])+","+str(edge[1])+"\n")
-        l=[edge]+l
-        t1=t1+[edge]+[(edge[1],edge[0])]
-     for edge in l:
-#        print(edge[1],",",edge[0])
-        f2.write(str(edge[1])+","+str(edge[0])+"\n")
-     for edge in sorted(t1):
-#        print(edge[1],",",edge[0])
-        f3.write(str(edge[0])+","+str(edge[1])+"\n")
-
-     f1.close()
-     f2.close()
-     f3.close()
-#     print("")
-
+          if other_tree_cost > current_tree_cost:
+            if other_tree_cost+edge_cost in costs_set:
+              break
+            newtree_cost=other_tree_cost+edge_cost
+          else:
+            if current_tree_cost+edge_cost in costs_set:
+              break
+            newtree_cost=current_tree_cost+edge_cost  
+          newtree=str(current_tree)+middle_edge+other_tree
+          if newtree_cost < global_minimum_cost:
+            global_minimum_cost=newtree_cost
+          costs_set.add(newtree_cost)
+          lasttree_cost=other_tree_cost
+          print(newtree,newtree_cost)
+          treelists[i][j][newtree]=newtree_cost
+with open("output.txt",'a') as f:
+  temp=0
+  for i in range(n):
+    trees=list(treelists[i][int(math.log2(n))].keys())
+    costs=list(treelists[i][int(math.log2(n))].values())
+    sorted_cost_indices=np.argsort(costs)
+    sorted_trees={trees[k]:costs[k] for k in sorted_cost_indices}
+    #print(trees[sorted_cost_indices[0]],costs[sorted_cost_indices[0]])
+    print(sorted_trees,file=f)
+    temp+=len(sorted_trees)
+  print("No. of trees:",temp,file=f)
+  print(datetime.datetime.now()-start_time,"\n\n",file=f)
