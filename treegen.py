@@ -12,8 +12,34 @@ def vertex(i):
 
 def index(vertex):
   return ord(vertex)-ord('A')
-#n=8
 
+def ispower(base,result):
+  i=0
+  while base**i < result:
+    i+=1
+  return base**i == result
+
+def to_tree(input,rootnode):
+   
+   if ispower(2,len(input)/2+1) == False:
+     print("Error")
+     return 0
+   lefttree,backbone,righttree=input[:int(len(input)/2)-1],input[int(len(input)/2)-1:int(len(input)/2)+1],input[int(len(input)/2)+1:]
+   if backbone[0] == rootnode:
+       othernode=backbone[1]
+       backbone=backbone[1]+rootnode
+   else:
+       othernode=backbone[0]  
+ 
+   if len(input) == 6:
+    if lefttree[0] == rootnode:
+        lefttree=lefttree[1]+rootnode
+    if righttree[0] == othernode:
+        righttree=righttree[1]+othernode
+    return lefttree+","+righttree+","+backbone
+   else:
+    return to_tree(lefttree,rootnode=rootnode)+","+to_tree(righttree,rootnode=othernode)+","+backbone
+   
 edges_dict={
 'AB':9,
 'AC':3,
@@ -156,13 +182,36 @@ for i in range(n):
           treelists[i][j][newtree]=newtree_cost
 with open("output.txt",'a') as f:
   temp=0
+  global_tree_list=[]
   for i in range(n):
     trees=list(treelists[i][int(math.log2(n))].keys())
     costs=list(treelists[i][int(math.log2(n))].values())
     sorted_cost_indices=np.argsort(costs)
     sorted_trees={trees[k]:costs[k] for k in sorted_cost_indices}
-    #print(trees[sorted_cost_indices[0]],costs[sorted_cost_indices[0]])
+    if len(sorted_trees) > 0:
+      global_tree_list+=[(trees[sorted_cost_indices[0]],costs[sorted_cost_indices[0]])]
     print(sorted_trees,file=f)
     temp+=len(sorted_trees)
   print("No. of trees:",temp,file=f)
   print(datetime.datetime.now()-start_time,"\n\n",file=f)
+global_tree_list.sort(key=lambda x:x[1])
+final_tree,final_root,final_cost=global_tree_list[0][0],global_tree_list[0][0][0],global_tree_list[0][1]
+#print(final_tree,final_root,final_cost)
+resultant_string=to_tree(final_tree,final_root)
+print(resultant_string)
+resultant_edges=resultant_string.split(',')
+edges_final=[]
+for i in resultant_edges:
+  edges_final+=[(index(i[0]),index(i[1]))]
+l=[]
+
+f1 = open("layout-up", "w")
+f2 = open("layout-down", "w")
+
+for edge in edges_final:
+#        print(edge[0],",",edge[1],sep="",end=" ")
+  f1.write(str(edge[0])+","+str(edge[1])+"\n")
+  l=[edge]+l
+  
+for edge in l:
+  f2.write(str(edge[1])+","+str(edge[0])+"\n")
