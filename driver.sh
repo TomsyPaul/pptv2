@@ -8,7 +8,7 @@ mode=$6
 head -n $worldsize hostipsall > hostips
 
 #generate layouts
-python3 treegen.py 
+python3 treegen.py --n=$worldsize
 
 ##generate secrets (n-1)
 #>secrets
