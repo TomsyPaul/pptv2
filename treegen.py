@@ -20,7 +20,7 @@ def generate_tree(n,i):
          else:
            r1,l1=generate_tree(n//2,i)
            r2,l2=generate_tree(n//2,i+n//2)
-           return (n+i-1,l1+l2+[(n//2+i-1,i+n-1)])
+           return (n+i-1,l1+l2+[(r1,r2)])
     else:
         if(n-k<4):
            r,l=generate_tree(k,i)

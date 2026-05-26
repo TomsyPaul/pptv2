@@ -21,7 +21,7 @@ def generate_tree(n,i):
         r1,l1=generate_tree(k//2,i)
         r2,l2=generate_tree(k//2,i+k//2)
         root=k+i-1
-        edges=l1+l2+[(k//2+i-1,i+k-1)]
+        edges=l1+l2+[(r1,r2)]
 #        breakpoint()
         if (n!=k):
             e=k-n
